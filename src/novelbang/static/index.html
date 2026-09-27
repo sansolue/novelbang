@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NovelBang</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📖</text></svg>">
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+
+<!-- ============ Project library ============ -->
+<section id="home" hidden>
+  <header class="home-head">
+    <h1>NovelBang</h1>
+    <p class="muted">Your novels, as plain files in <code id="ws-path"></code></p>
+    <button class="ghost" data-action="settings">Model settings</button>
+  </header>
+  <div id="project-grid" class="project-grid"></div>
+</section>
+
+<!-- ============ Studio ============ -->
+<section id="studio" hidden>
+  <header class="topbar">
+    <button class="ghost icon" data-action="home" title="All projects">←</button>
+    <div class="book-title" id="book-title"></div>
+    <div class="progress" title="Words written vs target">
+      <span id="total-words"></span>
+      <div class="bar"><div id="progress-fill"></div></div>
+    </div>
+    <span class="save-state" id="save-state"></span>
+    <div class="spacer"></div>
+    <button class="ghost" data-action="focus" title="Hide side panels (Esc to exit)">Focus</button>
+    <button class="ghost" data-action="toggle-ai">Co-writer</button>
+    <button class="ghost" data-action="settings">Settings</button>
+    <button class="primary" data-action="publish">Publish</button>
+  </header>
+
+  <div class="panes">
+    <aside class="sidebar">
+      <button class="nav-item book-item" data-view="book">📘 Book details</button>
+      <div class="side-head">
+        <span>Manuscript</span>
+        <button class="ghost small" data-action="new-chapter" title="New chapter">+ Chapter</button>
+      </div>
+      <ol id="chapter-list" class="chapter-list"></ol>
+      <div class="side-head">
+        <span>Notes</span>
+        <button class="ghost small" data-action="new-note" title="New note">+ Note</button>
+      </div>
+      <ul id="note-list" class="note-list"></ul>
+      <p class="side-foot muted" id="project-path"></p>
+    </aside>
+
+    <main class="editor-pane" id="editor-pane">
+      <!-- chapter / note editor -->
+      <div id="doc-view" class="doc" hidden>
+        <div class="doc-head">
+          <input id="doc-title" class="doc-title" placeholder="Chapter title" spellcheck="true">
+          <div class="doc-meta" id="chapter-meta">
+            <select id="doc-kind" title="Front matter (dedication, prologue…), chapter, or back matter (afterword, about the author…)">
+              <option value="front">Front matter</option>
+              <option value="chapter">Chapter</option>
+              <option value="back">Back matter</option>
+            </select>
+            <select id="doc-status">
+              <option value="idea">Idea</option>
+              <option value="draft">Draft</option>
+              <option value="revised">Revised</option>
+              <option value="final">Final</option>
+            </select>
+            <span class="muted" id="doc-words"></span>
+            <button class="ghost small danger" data-action="delete-doc">Delete</button>
+          </div>
+          <textarea id="doc-synopsis" class="synopsis" rows="1"
+            placeholder="Synopsis — what happens in this chapter. The co-writer uses these to remember the story so far."></textarea>
+        </div>
+        <textarea id="doc-text" class="prose" spellcheck="true"
+          placeholder="Start writing… (Markdown: *italic*, **bold**, *** on its own line for a scene break)"></textarea>
+      </div>
+
+      <!-- book details -->
+      <form id="book-view" class="doc book-form" hidden>
+        <h2>Book details</h2>
+        <p class="muted">Used on the title page, in ebook metadata, and on store listings.</p>
+        <div class="book-grid">
+          <div class="cover-box">
+            <img id="cover-img" alt="" hidden>
+            <div id="cover-empty" class="cover-empty">No cover<br><small>JPEG or PNG, ideally 1600×2560</small></div>
+            <label class="button ghost small">Choose cover…<input type="file" id="cover-file" accept="image/jpeg,image/png" hidden></label>
+          </div>
+          <div class="fields">
+            <label>Title <input name="title"></label>
+            <label>Subtitle <input name="subtitle"></label>
+            <label>Author <input name="author"></label>
+            <div class="row">
+              <label>Language <input name="language" placeholder="en"></label>
+              <label>Genre <input name="genre" placeholder="Fantasy"></label>
+            </div>
+            <label>Keywords <input name="keywords" placeholder="comma, separated"></label>
+            <label>Description / blurb <textarea name="description" rows="6"></textarea></label>
+            <div class="row">
+              <label>Series <input name="series"></label>
+              <label>Book # <input name="series_index"></label>
+            </div>
+            <div class="row">
+              <label>Publisher <input name="publisher"></label>
+              <label>ISBN <input name="isbn"></label>
+            </div>
+            <label>Copyright line <input name="rights" placeholder="© 2026 Your Name. All rights reserved."></label>
+            <div class="row">
+              <label>Word target <input name="target_words" type="number" min="0" step="1000"></label>
+              <label class="check"><input name="number_chapters" type="checkbox"> Print “Chapter N” headings</label>
+            </div>
+          </div>
+        </div>
+      </form>
+
+      <div id="empty-view" class="empty" hidden>Pick a chapter or note on the left.</div>
+    </main>
+
+    <aside class="ai-pane" id="ai-pane">
+      <div class="tabs">
+        <button class="tab active" data-tab="write">Write</button>
+        <button class="tab" data-tab="chat">Brainstorm</button>
+        <span class="model-badge" id="model-badge" title="Model in use"></span>
+      </div>
+
+      <div class="tab-body" id="tab-write">
+        <label class="muted small-label">Direction (optional)</label>
+        <textarea id="ai-instruction" rows="3" placeholder="e.g. Mara finds the letter and hides it from Tom. Tense, quiet."></textarea>
+        <div class="ai-buttons">
+          <button class="primary" data-ai="continue" title="Continue from the cursor (⌘/Ctrl+J)">Continue</button>
+          <button data-ai="rewrite" title="Rewrite the selected text using the direction above">Rewrite selection</button>
+          <button data-ai="summarize" title="Write this chapter's synopsis">Summarize</button>
+        </div>
+        <label class="muted small-label">Length
+          <select id="ai-length">
+            <option value="250">Short (~1 paragraph)</option>
+            <option value="600" selected>Medium (~a page)</option>
+            <option value="1400">Long (a scene)</option>
+          </select>
+        </label>
+        <div id="ai-output" class="ai-output" hidden></div>
+        <div id="ai-output-actions" class="ai-buttons" hidden>
+          <button class="primary" data-action="ai-accept">Insert</button>
+          <button data-action="ai-retry">Try again</button>
+          <button data-action="ai-discard">Discard</button>
+        </div>
+        <button id="ai-stop" class="danger" data-action="ai-stop" hidden>Stop</button>
+        <p class="muted tip">Tip: the co-writer reads your notes (style, characters, world, outline) and chapter synopses. Keep them current for better results.</p>
+      </div>
+
+      <div class="tab-body" id="tab-chat" hidden>
+        <div id="chat-log" class="chat-log">
+          <p class="muted">Ask about plot holes, character motivation, names, what should happen next… The current chapter is shared as context.</p>
+        </div>
+        <form id="chat-form" class="chat-form">
+          <textarea id="chat-input" rows="3" placeholder="What if the villain…"></textarea>
+          <div class="ai-buttons">
+            <button class="primary" type="submit">Send</button>
+            <button type="button" data-action="chat-clear">Clear</button>
+          </div>
+        </form>
+      </div>
+    </aside>
+  </div>
+</section>
+
+<!-- ============ Dialogs ============ -->
+<dialog id="ask-dialog">
+  <form method="dialog">
+    <h3 id="ask-title"></h3>
+    <div id="ask-fields"></div>
+    <menu><button value="cancel" formnovalidate>Cancel</button><button class="primary" value="ok">OK</button></menu>
+  </form>
+</dialog>
+
+<dialog id="settings-dialog">
+  <form method="dialog" id="settings-form">
+    <h3>Model settings</h3>
+    <p class="muted">Any OpenAI-compatible server running on your machine.</p>
+    <label>Server URL <input name="base_url" required></label>
+    <div class="presets">
+      <button type="button" class="ghost small" data-preset="http://localhost:11434/v1">Ollama</button>
+      <button type="button" class="ghost small" data-preset="http://localhost:8080/v1">llama.cpp</button>
+      <button type="button" class="ghost small" data-preset="http://localhost:1234/v1">LM Studio</button>
+    </div>
+    <label>Model
+      <div class="row tight">
+        <input name="model" list="model-options" placeholder="e.g. llama3.1:8b">
+        <button type="button" data-action="load-models">Detect</button>
+      </div>
+      <datalist id="model-options"></datalist>
+    </label>
+    <p id="model-status" class="muted small-label"></p>
+    <label>API key <input name="api_key" type="password" placeholder="usually blank for local servers"></label>
+    <div class="row">
+      <label>Temperature <input name="temperature" type="number" step="0.05" min="0" max="2"></label>
+      <label>Default max tokens <input name="max_tokens" type="number" step="50" min="50"></label>
+    </div>
+    <label>Context budget (characters sent per request)
+      <input name="context_chars" type="number" step="1000" min="2000">
+    </label>
+    <label class="check plain"><input name="thinking" type="checkbox"> Let reasoning models think first
+      <span class="muted">(qwen3, deepseek-r1, gpt-oss… — slower, and thinking counts against max tokens)</span></label>
+    <p class="muted small-label">Roughly 4 characters per token. Keep this below your model's context window (e.g. 12000 chars ≈ 3k tokens).</p>
+    <menu><button value="cancel" formnovalidate>Cancel</button><button class="primary" value="ok">Save</button></menu>
+  </form>
+</dialog>
+
+<dialog id="publish-dialog" class="wide">
+  <form method="dialog">
+    <h3>Publish</h3>
+    <div class="publish-grid">
+      <div>
+        <h4>Readiness</h4>
+        <ul id="checks" class="checks"></ul>
+      </div>
+      <div>
+        <h4>Export</h4>
+        <div id="formats" class="formats"></div>
+        <h4>Files</h4>
+        <ul id="exports" class="exports"></ul>
+        <p class="muted small-label">Saved in <code id="exports-dir"></code></p>
+      </div>
+    </div>
+    <menu><button value="close">Close</button></menu>
+  </form>
+</dialog>
+
+<div id="toast" class="toast" hidden></div>
+<script src="/static/app.js"></script>
+</body>
+</html>
