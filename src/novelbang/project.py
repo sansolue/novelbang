@@ -14,6 +14,8 @@ or a synced folder and be edited with any text editor.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import re
 import shutil
@@ -45,6 +47,15 @@ DEFAULT_NOTES = {
     ),
 }
 
+# Where NovelBang keeps its own bookkeeping inside a project (hidden from the author's git).
+META_DIR = ".novelbang"
+SYNOPSIS_STATE = "synopses.json"
+# A synopsis is out of date once this share of the chapter's text is new or gone.
+STALE_RATIO = 0.25
+# Chapters shorter than this don't need a synopsis.
+SYNOPSIS_MIN_WORDS = 50
+
+_PARA_SPLIT = re.compile(r"\n\s*\n")
 _SAFE_FILE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._ -]{0,120}\.md$")
 _WORD = re.compile(r"\b[\w'’-]+\b")
 
@@ -80,6 +91,28 @@ def convert_field(current: object, value: object) -> object:
         if isinstance(value, (str, int, float)) and not isinstance(value, bool):
             return str(value)
     raise ValueError(f"expected {type(current).__name__}, got {value!r}")
+
+
+def fingerprint(text: str) -> dict:
+    """A compact record of a chapter's paragraphs, to tell later how much it has changed."""
+    paras: dict[str, int] = {}
+    for p in _PARA_SPLIT.split(text):
+        if p := " ".join(p.split()):
+            key = hashlib.sha1(p.encode()).hexdigest()[:12]
+            paras[key] = paras.get(key, 0) + len(p)
+    return {"words": count_words(text), "paras": paras}
+
+
+def change_ratio(old: dict, text: str) -> float:
+    """Share of the text that is new or gone since `old` was taken (0 = same, 1 = rewritten)."""
+    new = fingerprint(text)["paras"]
+    before = old.get("paras", {})
+    total_new, total_old = sum(new.values()), sum(before.values())
+    if not total_new and not total_old:
+        return 0.0
+    added = sum(n for k, n in new.items() if k not in before)
+    removed = sum(n for k, n in before.items() if k not in new)
+    return max(added / (total_new or 1), removed / (total_old or 1))
 
 
 def check_filename(name: str) -> str:
@@ -267,7 +300,51 @@ class Project:
         if ch.status not in CHAPTER_STATUSES:
             ch.status = "draft"
         self.save()
+        if changes.get("synopsis") is not None and not self.is_missing(file):
+            # Whoever saved the synopsis vouches for it against the text as it is now.
+            self._record_synopsis(file, self.read_chapter(file))
         return ch
+
+    # ---- synopsis freshness -----------------------------------------------
+
+    def _synopsis_path(self) -> Path:
+        return self.root / META_DIR / SYNOPSIS_STATE
+
+    def _synopsis_fingerprints(self) -> dict[str, dict]:
+        try:
+            return json.loads(self._synopsis_path().read_text("utf-8"))
+        except (OSError, ValueError):
+            return {}
+
+    def _record_synopsis(self, file: str, text: str) -> None:
+        data = self._synopsis_fingerprints()
+        data[file] = fingerprint(text)
+        meta = self.root / META_DIR
+        meta.mkdir(exist_ok=True)
+        if not (meta / ".gitignore").exists():
+            (meta / ".gitignore").write_text("*\n", "utf-8")
+        _atomic_write(self._synopsis_path(), json.dumps(data, indent=1))
+
+    def synopsis_state(self, chapter: Chapter, text: str, fingerprints: dict[str, dict] | None = None) -> str:
+        """'none' (too short to need one), 'missing', 'stale' or 'fresh'."""
+        if count_words(text) < SYNOPSIS_MIN_WORDS:
+            return "fresh" if chapter.synopsis.strip() else "none"
+        if not chapter.synopsis.strip():
+            return "missing"
+        fp = (fingerprints if fingerprints is not None else self._synopsis_fingerprints()).get(chapter.file)
+        # A synopsis with no fingerprint was written by hand in novel.toml: trust it.
+        if fp and change_ratio(fp, text) > STALE_RATIO:
+            return "stale"
+        return "fresh"
+
+    def chapter_stats(self) -> dict[str, dict]:
+        """Word count and synopsis state per chapter, reading each file once."""
+        fps = self._synopsis_fingerprints()
+        stats = {}
+        for c in self.chapters:
+            text = "" if self.is_missing(c.file) else self.read_chapter(c.file)
+            stats[c.file] = {"words": count_words(text), "synopsis_state": self.synopsis_state(c, text, fps)}
+        return stats
 
     def is_missing(self, file: str) -> bool:
         return not (self.chapters_dir / file).is_file()

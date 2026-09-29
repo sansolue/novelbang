@@ -77,6 +77,7 @@ class AIRequest(BaseModel):
     instruction: str = ""
     history: list[dict] = []
     max_tokens: int | None = None
+    synopses: dict[str, str] = {}  # summarize: synopses regenerated earlier in a batch
 
 
 def create_app(
@@ -152,14 +153,14 @@ def create_app(
         return JSONResponse({"detail": str(exc)}, status_code=400)
 
     def summary(p: Project) -> dict:
-        counts = p.word_counts()
+        stats = p.chapter_stats()
         return {
             "id": p.id,
             "path": str(p.root),
             "meta": p.meta.__dict__,
-            "words": sum(counts.values()),
+            "words": sum(s["words"] for s in stats.values()),
             "chapters": [
-                {**c.__dict__, "words": counts[c.file], "missing": p.is_missing(c.file)} for c in p.chapters
+                {**c.__dict__, **stats[c.file], "missing": p.is_missing(c.file)} for c in p.chapters
             ],
             "notes": p.list_notes(),
             "has_cover": p.cover_path() is not None,
@@ -408,6 +409,7 @@ def create_app(
         p = ws.get(pid)
         budget = settings.context_chars
         max_tokens = body.max_tokens
+        temperature = None  # the user's setting
         match action:
             case "continue":
                 if not body.file:
@@ -423,8 +425,12 @@ def create_app(
             case "summarize":
                 if not body.file:
                     raise HTTPException(400, "Open a chapter first")
-                msgs = prompts.summarize_messages(p, body.file, p.read_chapter(body.file), budget)
-                max_tokens = 250
+                msgs = prompts.summarize_messages(
+                    p, body.file, p.read_chapter(body.file), budget, body.synopses
+                )
+                # Reasoning models think within the same token budget, so give them room.
+                max_tokens = 2500 if settings.thinking else 350
+                temperature = 0.3  # synopses must be factual, not creative
             case "chat":
                 msgs = prompts.chat_messages(p, body.file, body.before, body.history, budget)
             case _:
@@ -433,7 +439,7 @@ def create_app(
         async def ndjson():
             try:
                 thinking_sent = False
-                async for text in stream_chat(settings, msgs, max_tokens=max_tokens):
+                async for text in stream_chat(settings, msgs, max_tokens=max_tokens, temperature=temperature):
                     if text is THINKING:
                         if not thinking_sent:
                             thinking_sent = True

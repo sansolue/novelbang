@@ -30,6 +30,15 @@ def _tail(text: str, limit: int) -> str:
     return text if len(text) <= limit else "[…] " + text[-limit:].split(" ", 1)[-1]
 
 
+def _ends(text: str, limit: int) -> str:
+    """Keep the opening and (mostly) the ending: endings matter most for what comes next."""
+    text = text.strip()
+    if len(text) <= limit:
+        return text
+    head = _head(text, limit * 2 // 5).removesuffix(" […]")
+    return f"{head}\n\n[… middle of the chapter omitted …]\n\n{_tail(text, limit * 3 // 5)}"
+
+
 def book_context(project: Project, budget: int) -> str:
     m = project.meta
     parts = [f"Title: {m.title}"]
@@ -55,15 +64,34 @@ def book_context(project: Project, budget: int) -> str:
     return header + ("\n\n" + "\n\n".join(sections) if sections else "")
 
 
-def story_so_far(project: Project, file: str, budget: int = 2000) -> str:
-    """Synopses of the chapters before `file`, most recent kept when trimming."""
+def story_so_far(
+    project: Project, file: str, budget: int = 2000, overrides: dict[str, str] | None = None
+) -> str:
+    """Synopses of the chapters before `file`, most recent kept when trimming.
+
+    `overrides` replaces stored synopses, e.g. ones regenerated earlier in a batch.
+    """
+    overrides = overrides or {}
     lines = []
     for ch in project.chapters:
         if ch.file == file:
             break
-        if ch.synopsis.strip():
-            lines.append(f"- {ch.title}: {ch.synopsis.strip()}")
+        synopsis = overrides.get(ch.file, ch.synopsis).strip()
+        if synopsis:
+            lines.append(f"- {ch.title}: {synopsis}")
     return _tail("\n".join(lines), budget)
+
+
+def previous_ending(project: Project, file: str, limit: int = 1500) -> tuple[str, str] | None:
+    """(title, closing text) of the nearest earlier chapter that has any text."""
+    files = [c.file for c in project.chapters]
+    for ch in reversed(project.chapters[: files.index(file)]):
+        if project.is_missing(ch.file):
+            continue
+        text = project.read_chapter(ch.file).strip()
+        if text:
+            return ch.title, _tail(text, limit)
+    return None
 
 
 def _context_block(project: Project, file: str | None, budget: int) -> str:
@@ -83,6 +111,9 @@ def continue_messages(
     project: Project, file: str, before: str, after: str, instruction: str, budget: int
 ) -> list[dict]:
     ctx = _context_block(project, file, budget)
+    # Near the start of a chapter, show how the previous one ended so the story flows on.
+    if len(before) < 3000 and (prev := previous_ending(project, file, min(1500, budget // 8))):
+        ctx += f"\n\n# End of the previous chapter ({prev[0]})\n{prev[1]}"
     text_budget = max(budget - len(ctx), 2000)
     user = f"{ctx}\n\n# Chapter text so far\n{_tail(before, text_budget)}"
     if after.strip():
@@ -109,15 +140,31 @@ def rewrite_messages(
     return [{"role": "system", "content": SYSTEM}, {"role": "user", "content": user}]
 
 
-def summarize_messages(project: Project, file: str, text: str, budget: int) -> list[dict]:
+def summarize_messages(
+    project: Project, file: str, text: str, budget: int, overrides: dict[str, str] | None = None
+) -> list[dict]:
+    """Messages asking for a synopsis that later chapters can rely on for continuity."""
     ch = project.chapter(file)
-    user = (
-        f"Chapter “{ch.title}” of the novel “{project.meta.title}”:\n\n{_head(text, budget)}\n\n"
-        "Write a synopsis of this chapter in 2–4 sentences: who, what happens, what changes. "
-        "Plain prose, present tense, no preamble."
+    so_far = story_so_far(project, file, budget // 5, overrides)
+    user = f"Novel: “{project.meta.title}”\n\n"
+    if so_far:
+        user += f"# Story so far (earlier chapters)\n{so_far}\n\n"
+    user += (
+        f"# Chapter to summarise: {ch.title}\n{_ends(text, max(budget - len(so_far) - 600, 2000))}\n\n"
+        "# Task\nWrite a synopsis of this chapter for the author's reference, in 3–5 sentences of "
+        "plain present-tense prose. Cover the key events and what changes, then end with where "
+        "things stand as the chapter closes: where the main characters are, what has been "
+        "revealed or decided, and any open threads. Use the same names as the text and the "
+        "earlier synopses. Be literal: state only what happens on the page, exactly as it "
+        "happens — who does what, and who has what at the end. Do not infer motives or events "
+        "the text doesn't show. No preamble, headings or lists."
     )
     return [
-        {"role": "system", "content": "You summarise fiction chapters precisely and briefly."},
+        {
+            "role": "system",
+            "content": "You write precise, factual chapter synopses that help a novelist keep "
+            "continuity across a long book. Never invent events that are not in the text.",
+        },
         {"role": "user", "content": user},
     ]
 

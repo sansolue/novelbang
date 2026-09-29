@@ -44,6 +44,8 @@
         <button class="ghost small" data-action="new-chapter" title="New chapter">+ Chapter</button>
       </div>
       <ol id="chapter-list" class="chapter-list"></ol>
+      <button class="nav-item syn-link" data-action="synopses" id="synopses-btn"
+        title="Review and update chapter synopses — the co-writer's memory of earlier chapters">↻ Synopses<span class="count" id="synopses-count"></span></button>
       <div class="side-head">
         <span>Notes</span>
         <button class="ghost small" data-action="new-note" title="New note">+ Note</button>
@@ -75,6 +77,7 @@
           </div>
           <textarea id="doc-synopsis" class="synopsis" rows="1"
             placeholder="Synopsis — what happens in this chapter. The co-writer uses these to remember the story so far."></textarea>
+          <p id="syn-hint" class="syn-hint" hidden><span></span> <button class="ghost small" data-action="syn-update">Update with AI</button></p>
         </div>
         <textarea id="doc-text" class="prose" spellcheck="true"
           placeholder="Start writing… (Markdown: *italic*, **bold**, *** on its own line for a scene break)"></textarea>
@@ -230,6 +233,25 @@
     <p class="muted small-label">A version is saved automatically a minute after you stop typing, every few minutes while you write,
       and before every AI edit or restore. Restoring never loses anything — the current text is saved first.</p>
     <menu><button value="close">Close</button></menu>
+  </form>
+</dialog>
+
+<dialog id="synopses-dialog" class="wide">
+  <form method="dialog">
+    <h3>Chapter synopses</h3>
+    <p class="muted small-label">The co-writer reads the synopses of earlier chapters to keep the story consistent.
+      Chapters are updated in book order, each one building on the new synopses before it. Nothing is saved until you apply.</p>
+    <div class="syn-toolbar">
+      <label class="check inline"><input type="checkbox" id="syn-all"> Select all</label>
+      <span id="syn-progress" class="muted"></span>
+      <button type="button" class="primary small" data-action="syn-generate" id="syn-generate">Generate</button>
+      <button type="button" class="small danger" data-action="ai-stop" id="syn-stop" hidden>Stop</button>
+    </div>
+    <ol id="syn-list" class="syn-list"></ol>
+    <menu>
+      <button value="close">Close</button>
+      <button type="button" class="primary" data-action="syn-apply" id="syn-apply" disabled>Apply</button>
+    </menu>
   </form>
 </dialog>
 

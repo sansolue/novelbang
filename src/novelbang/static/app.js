@@ -56,6 +56,11 @@ const countWords = (s) => (s.match(/[\p{L}\p{N}'’-]+/gu) || []).length;
 const fmt = (n) => n.toLocaleString();
 const pid = () => enc(state.project.id);
 
+function fitHeight(ta) {
+  ta.style.height = "auto";
+  ta.style.height = ta.scrollHeight + 2 + "px";
+}
+
 function autogrow(ta) {
   const pane = $("#editor-pane");
   const top = pane.scrollTop;
@@ -179,6 +184,9 @@ function renderProject() {
         },
         el("span", { class: "num" }, String(num)),
         el("span", { class: "name" }, c.title),
+        ["stale", "missing"].includes(c.synopsis_state)
+          ? el("span", { class: "syn-flag", title: c.synopsis_state === "stale" ? "Synopsis is out of date" : "No synopsis yet" }, "↻")
+          : null,
         el("span", { class: "wc", title: c.missing ? "File is missing from chapters/" : null }, c.missing ? "missing" : c.words ? fmt(c.words) : ""),
         el("span", { class: "dot " + c.status, title: c.status }));
       li.dataset.file = c.file;
@@ -191,6 +199,10 @@ function renderProject() {
         "🗒 ", name.replace(/\.md$/, "")))
   );
   $(".book-item").classList.toggle("active", isActive("book"));
+  const needing = p.chapters.filter((c) => ["stale", "missing"].includes(c.synopsis_state)).length;
+  $("#synopses-count").textContent = needing ? `${needing} to update` : "";
+  $("#synopses-btn").classList.toggle("attention", needing > 0);
+  renderSynopsisHint();
 }
 
 const isActive = (type, id) => state.view && state.view.type === type && (id === undefined || state.view.id === id);
@@ -296,8 +308,130 @@ async function doFlushSave() {
 
 async function saveChapterMeta(patch) {
   const { id } = state.view;
+  if ("synopsis" in patch) await flushSave();  // the synopsis is checked against the saved text
   state.project = await api("PUT", `/api/projects/${pid()}/chapters/${enc(id)}`, patch);
   renderProject();
+}
+
+function renderSynopsisHint() {
+  const hint = $("#syn-hint");
+  const ch = state.view?.type === "chapter" && state.project.chapters.find((c) => c.file === state.view.id);
+  const s = ch ? ch.synopsis_state : null;
+  hint.hidden = !["stale", "missing"].includes(s);
+  if (hint.hidden) return;
+  hint.firstElementChild.textContent = s === "stale"
+    ? "This chapter has changed a lot since its synopsis was written."
+    : "No synopsis yet. Later chapters rely on it for continuity.";
+}
+
+async function updateThisSynopsis() {
+  document.body.classList.remove("no-ai");
+  $$(".tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === "write"));
+  $("#tab-write").hidden = false;
+  $("#tab-chat").hidden = true;
+  await runWriteAction("summarize");
+}
+
+// ---------------------------------------------------------------- synopses (batch)
+
+async function openSynopses() {
+  await flushSave();
+  await refreshProject();
+  const rows = state.project.chapters
+    .filter((c) => c.synopsis_state !== "none" && !c.missing)
+    .map((c) => ({ c, selected: ["stale", "missing"].includes(c.synopsis_state), draft: null, status: "" }));
+  state.syn = { rows, running: false };
+  $("#syn-all").checked = rows.length > 0 && rows.every((r) => r.selected);
+  $("#syn-progress").textContent = rows.length ? "" : "No chapters long enough to summarise yet.";
+  renderSynopses();
+  $("#synopses-dialog").showModal();
+}
+
+function renderSynopses() {
+  const { rows, running } = state.syn;
+  const label = { stale: "out of date", missing: "missing", fresh: "up to date" };
+  $("#syn-list").replaceChildren(...rows.map((r) =>
+    el("li", { class: r.status },
+      el("div", { class: "syn-row" },
+        el("input", { type: "checkbox", checked: r.selected, disabled: running,
+          onchange: (e) => { r.selected = e.target.checked; renderSynopses(); } }),
+        el("strong", {}, r.c.title),
+        el("span", { class: "badge " + r.c.synopsis_state }, label[r.c.synopsis_state] || ""),
+        el("span", { class: "muted syn-status" }, r.status === "working" ? "writing…" : "")),
+      el("p", { class: "syn-old" + (r.draft != null ? " replaced" : "") }, r.c.synopsis || "(no synopsis)"),
+      r.draft != null
+        ? el("textarea", { class: "syn-new", rows: 2, disabled: r.status === "working",
+            oninput: (e) => { r.draft = e.target.value; fitHeight(e.target); } }, r.draft)
+        : null)));
+  $$("#syn-list .syn-new").forEach(fitHeight);
+  const pending = rows.filter((r) => r.draft?.trim() && r.status === "done").length;
+  $("#syn-apply").disabled = running || !pending;
+  $("#syn-apply").textContent = pending ? `Apply ${pending}` : "Apply";
+  $("#syn-generate").hidden = running;
+  $("#syn-stop").hidden = !running;
+  $("#syn-generate").disabled = !rows.some((r) => r.selected);
+}
+
+async function generateSynopses() {
+  if (!state.settings?.model) { toast("Choose a model first", true); return openSettings(); }
+  const { rows } = state.syn;
+  const todo = rows.filter((r) => r.selected);
+  // Earlier chapters' new synopses feed into later ones.
+  const overrides = {};
+  for (const r of rows) if (r.draft?.trim() && r.status === "done") overrides[r.c.file] = r.draft.trim();
+  state.syn.running = true;
+  let n = 0;
+  try {
+    for (const r of rows) {
+      if (!r.selected) continue;
+      n++;
+      $("#syn-progress").textContent = `${n} of ${todo.length}`;
+      r.draft = "";
+      r.status = "working";
+      renderSynopses();
+      const box = () => $$("#syn-list li")[rows.indexOf(r)]?.querySelector(".syn-new");
+      await streamAI("summarize", { file: r.c.file, synopses: overrides }, (t) => {
+        r.draft += t;
+        const ta = box();
+        if (ta) { ta.value = r.draft.replace(/^\s+/, ""); fitHeight(ta); }
+      });
+      r.draft = r.draft.trim();
+      r.status = r.draft ? "done" : "";
+      r.selected = false;
+      if (r.draft) overrides[r.c.file] = r.draft;
+      renderSynopses();
+    }
+    $("#syn-progress").textContent = "Review the new synopses, then apply.";
+  } catch (e) {
+    const r = rows.find((x) => x.status === "working");
+    if (r) { r.status = ""; r.draft = null; }
+    $("#syn-progress").textContent = e.name === "AbortError" ? "Stopped." : "";
+    if (e.name !== "AbortError") toast(e.message, true);
+  } finally {
+    state.syn.running = false;
+    state.ai.controller = null;
+    renderSynopses();
+  }
+}
+
+async function applySynopses() {
+  const ready = state.syn.rows.filter((r) => r.draft?.trim() && r.status === "done");
+  if (!ready.length) return;
+  await checkpoint(`Before updating ${ready.length} synopses`);
+  for (const r of ready) {
+    state.project = await api("PUT", `/api/projects/${pid()}/chapters/${enc(r.c.file)}`, { synopsis: r.draft.trim() });
+    r.c = state.project.chapters.find((c) => c.file === r.c.file);
+    r.draft = null;
+    r.status = "";
+  }
+  if (state.view?.type === "chapter") {
+    const ch = state.project.chapters.find((c) => c.file === state.view.id);
+    if (ch) { $("#doc-synopsis").value = ch.synopsis; autogrow($("#doc-synopsis")); }
+  }
+  renderProject();
+  renderSynopses();
+  $("#syn-progress").textContent = "";
+  toast(`Updated ${ready.length} ${ready.length === 1 ? "synopsis" : "synopses"}`);
 }
 
 // ---------------------------------------------------------------- book details
@@ -876,6 +1010,10 @@ function wire() {
     "new-chapter": newChapter,
     "new-note": newNote,
     "delete-doc": deleteDoc,
+    synopses: () => openSynopses().catch((e) => toast(e.message, true)),
+    "syn-generate": () => generateSynopses(),
+    "syn-apply": () => applySynopses().catch((e) => toast(e.message, true)),
+    "syn-update": () => updateThisSynopsis(),
     history: () => openHistory().catch((e) => toast(e.message, true)),
     "hist-restore": () => restoreVersion().catch((e) => toast(e.message, true)),
     milestone: () => saveMilestone().catch((e) => toast(e.message, true)),
@@ -923,6 +1061,11 @@ function wire() {
   $("#settings-dialog").addEventListener("close", () => $("#settings-dialog").returnValue === "ok" && saveSettings());
   $("#chat-form").addEventListener("submit", sendChat);
   $("#hist-full").addEventListener("change", renderHistDetail);
+  $("#syn-all").addEventListener("change", (e) => {
+    state.syn.rows.forEach((r) => (r.selected = e.target.checked));
+    renderSynopses();
+  });
+  $("#synopses-dialog").addEventListener("cancel", (e) => state.syn?.running && e.preventDefault());
   $("#chat-input").addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("#chat-form").requestSubmit(); }
   });

@@ -46,7 +46,7 @@ the-salt-road/
   assets/cover.jpg      optional cover (JPEG/PNG, ideally 1600×2560)
   exports/              generated files (git-ignored)
   trash/                deleted chapters and notes end up here, never erased
-  .novelbang/           version history (see below)
+  .novelbang/           version history and synopsis tracking (see below)
 ```
 
 Chapter files are named once and never renamed; order lives in `novel.toml`, so
@@ -55,6 +55,25 @@ hand is picked up and added to the end of the book.
 
 Chapters have a **type**: *front matter* (dedication, prologue, epigraph), *chapter*
 (numbered), or *back matter* (afterword, acknowledgements, about the author).
+
+## Chapter synopses (the co-writer's memory)
+
+A local model can't read your whole book, so it relies on a short synopsis
+per chapter to remember what happened earlier. NovelBang keeps them honest:
+
+- **Out-of-date detection.** When a synopsis is saved, NovelBang records a
+  fingerprint of the chapter's paragraphs. Once more than a quarter of the text
+  is new or gone, the chapter gets a ↻ marker and a hint under its synopsis.
+  Chapters with 50+ words and no synopsis are flagged too.
+- **↻ Synopses** (under the chapter list) regenerates flagged chapters in book
+  order, each one reading the new synopses of the chapters before it. Review
+  and edit them, then apply; a history version is saved first. Local models
+  sometimes misstate details, so read before applying.
+- Synopses are written for continuity: key events, then where things stand at
+  the end (who is where, what's been revealed, open threads). Long chapters are
+  trimmed from the middle so the ending is always included.
+- When you **Continue** near the start of a chapter, the co-writer also sees
+  the closing lines of the previous chapter.
 
 ## Version history
 
