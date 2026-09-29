@@ -224,6 +224,7 @@ async function openView(type, id) {
     $("#doc-title").readOnly = !chapter;
     $("#chapter-meta").querySelectorAll("select").forEach((s) => (s.hidden = !chapter));
     $("#doc-synopsis").hidden = !chapter;
+    $(".history-btn").hidden = !p.history;
     if (chapter) {
       $("#doc-kind").value = chapter.kind;
       $("#doc-status").value = chapter.status;
@@ -512,6 +513,8 @@ async function acceptAI() {
     autogrow($("#doc-synopsis"));
     await saveChapterMeta({ synopsis: insert });
   } else {
+    const title = state.project.chapters.find((c) => c.file === state.view.id)?.title || "";
+    await checkpoint(`Before AI ${action === "rewrite" ? "rewrite" : "continuation"} in “${title}”`);
     const ta = $("#doc-text");
     let [start, end] = range;
     if (action === "continue") {
@@ -536,6 +539,160 @@ function discardAI() {
   state.ai.text = "";
   $("#ai-output").hidden = true;
   $("#ai-output-actions").hidden = true;
+}
+
+// ---------------------------------------------------------------- history
+
+async function checkpoint(message) {
+  if (!state.project.history) return;
+  await flushSave();
+  try {
+    await api("POST", `/api/projects/${pid()}/history`, { kind: "checkpoint", message });
+  } catch (e) {
+    toast("Couldn't save a version first: " + e.message, true);
+  }
+}
+
+const docRef = () => ({ type: state.view.type, name: state.view.id });
+const docLabel = () =>
+  state.view.type === "chapter"
+    ? state.project.chapters.find((c) => c.file === state.view.id)?.title || state.view.id
+    : state.view.id.replace(/\.md$/, "");
+
+const KIND_LABEL = { auto: "", session: "opened", checkpoint: "checkpoint", milestone: "★ milestone", restore: "restored" };
+
+function when(ts) {
+  const d = new Date(ts * 1000);
+  const mins = Math.round((Date.now() - d) / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins} min ago`;
+  const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const days = Math.floor((new Date().setHours(0, 0, 0, 0) - new Date(d).setHours(0, 0, 0, 0)) / 864e5);
+  if (days === 0) return `Today ${time}`;
+  if (days === 1) return `Yesterday ${time}`;
+  return d.toLocaleDateString([], { month: "short", day: "numeric", year: days > 300 ? "numeric" : undefined }) + ` ${time}`;
+}
+
+async function openHistory() {
+  if (!["chapter", "note"].includes(state.view?.type)) return;
+  await flushSave();
+  state.hist = { versions: [], selected: null, detail: null };
+  $("#hist-title").textContent = "— " + docLabel();
+  $("#hist-list").replaceChildren();
+  $("#hist-diff").replaceChildren(el("p", { class: "muted" }, "Loading…"));
+  $("#hist-summary").textContent = "";
+  $("#hist-restore").hidden = true;
+  $("#history-dialog").showModal();
+  await loadHistory();
+}
+
+async function loadHistory() {
+  const q = new URLSearchParams(docRef());
+  const { versions } = await api("GET", `/api/projects/${pid()}/history?${q}`);
+  state.hist.versions = versions;
+  if (!versions.length) {
+    $("#hist-list").replaceChildren();
+    $("#hist-diff").replaceChildren(el("p", { class: "muted" },
+      "No saved versions yet. One is saved automatically a minute after you stop typing."));
+    return;
+  }
+  renderHistList();
+  await selectVersion(versions.find((v) => v.words !== null) || versions[0]);
+}
+
+function renderHistList() {
+  $("#hist-list").replaceChildren(
+    ...state.hist.versions.map((v) => {
+      const delta = v.delta == null ? "" : v.delta > 0 ? `+${fmt(v.delta)}` : v.delta < 0 ? `−${fmt(-v.delta)}` : "±0";
+      return el("li", {
+          class: `${v.kind} ${state.hist.selected === v ? "active" : ""}`,
+          onclick: () => selectVersion(v),
+        },
+        el("div", { class: "hist-row" },
+          el("strong", {}, when(v.time)),
+          KIND_LABEL[v.kind] ? el("span", { class: "badge " + v.kind }, KIND_LABEL[v.kind]) : null,
+          el("span", { class: "hist-words " + (v.delta > 0 ? "up" : v.delta < 0 ? "down" : "") },
+            v.words == null ? "—" : `${fmt(v.words)} w`, delta ? ` (${delta})` : "")),
+        el("div", { class: "hist-msg" }, v.message));
+    })
+  );
+}
+
+async function selectVersion(v) {
+  state.hist.selected = v;
+  renderHistList();
+  const q = new URLSearchParams(docRef());
+  try {
+    state.hist.detail = await api("GET", `/api/projects/${pid()}/history/${v.id}?${q}`);
+  } catch (e) {
+    state.hist.detail = null;
+    $("#hist-diff").replaceChildren(el("p", { class: "muted" }, e.message));
+    $("#hist-summary").textContent = "";
+    $("#hist-restore").hidden = true;
+    return;
+  }
+  renderHistDetail();
+}
+
+function renderHistDetail() {
+  const d = state.hist.detail;
+  if (!d) return;
+  const box = $("#hist-diff");
+  const changed = d.diff.some(([op]) => op !== "=");
+  const added = d.diff.filter(([op]) => op === "+").reduce((n, [, t]) => n + countWords(t), 0);
+  const removed = d.diff.filter(([op]) => op === "-").reduce((n, [, t]) => n + countWords(t), 0);
+  $("#hist-summary").textContent = changed
+    ? `Since this version: ${fmt(added)} words added, ${fmt(removed)} removed`
+    : "Same as the current text";
+  $("#hist-restore").hidden = !changed;
+  if ($("#hist-full").checked) {
+    box.replaceChildren(d.text || el("span", { class: "muted" }, "(empty)"));
+  } else if (!changed) {
+    box.replaceChildren(el("p", { class: "muted" }, "No differences from the current text."));
+  } else {
+    box.replaceChildren(...d.diff.map(([op, text], i) => {
+      if (op === "-") return el("del", { title: "Removed since this version" }, text);
+      if (op === "+") return el("ins", { title: "Added since this version" }, text);
+      // Collapse long unchanged stretches, keeping a little context around the edits.
+      const keepStart = i > 0 ? 160 : 0, keepEnd = i < d.diff.length - 1 ? 160 : 0;
+      if (text.length <= keepStart + keepEnd + 120) return text;
+      const hidden = countWords(text.slice(keepStart, text.length - keepEnd));
+      return el("span", {},
+        text.slice(0, keepStart),
+        el("span", { class: "gap" }, ` ⋯ ${fmt(hidden)} unchanged words ⋯ `),
+        keepEnd ? text.slice(-keepEnd) : "");
+    }));
+  }
+  box.scrollTop = 0;
+}
+
+async function restoreVersion() {
+  const v = state.hist.selected;
+  if (!v) return;
+  if (!confirm(`Replace the current text of “${docLabel()}” with the version from ${when(v.time)}?\n\n` +
+               "The current text is saved in History first, so you can undo this.")) return;
+  await flushSave();
+  const r = await api("POST", `/api/projects/${pid()}/history/restore`, { version: v.id, ...docRef() });
+  state.project = r.project;
+  const ta = $("#doc-text");
+  ta.value = r.text;
+  state.dirty = false;
+  autogrow(ta);
+  updateDocWords();
+  renderProject();
+  toast("Version restored");
+  await loadHistory();
+}
+
+async function saveMilestone() {
+  const r = await ask("Save milestone", [
+    { name: "message", label: "Name this version of the whole project", placeholder: "e.g. First draft complete", required: true },
+  ]);
+  if (!r) return;
+  await flushSave();
+  await api("POST", `/api/projects/${pid()}/history`, { kind: "milestone", message: r.message });
+  toast("Milestone saved");
+  if ($("#history-dialog").open) await loadHistory();
 }
 
 // ---------------------------------------------------------------- AI: chat
@@ -719,6 +876,9 @@ function wire() {
     "new-chapter": newChapter,
     "new-note": newNote,
     "delete-doc": deleteDoc,
+    history: () => openHistory().catch((e) => toast(e.message, true)),
+    "hist-restore": () => restoreVersion().catch((e) => toast(e.message, true)),
+    milestone: () => saveMilestone().catch((e) => toast(e.message, true)),
     "ai-accept": acceptAI,
     "ai-discard": discardAI,
     "ai-retry": () => runWriteAction(state.ai.action),
@@ -762,6 +922,7 @@ function wire() {
   $("#cover-file").addEventListener("change", (e) => e.target.files[0] && uploadCover(e.target.files[0]));
   $("#settings-dialog").addEventListener("close", () => $("#settings-dialog").returnValue === "ok" && saveSettings());
   $("#chat-form").addEventListener("submit", sendChat);
+  $("#hist-full").addEventListener("change", renderHistDetail);
   $("#chat-input").addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("#chat-form").requestSubmit(); }
   });

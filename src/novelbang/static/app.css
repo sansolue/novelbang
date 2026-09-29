@@ -139,6 +139,8 @@ body.focus .doc-head { opacity: .25; transition: opacity .3s; } body.focus .doc-
 .doc-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 12px; }
 .doc-meta select { width: auto; padding: 3px 6px; font-size: 12px; }
 .doc-meta .danger { margin-left: auto; }
+.doc-meta .history-btn { margin-left: auto; }
+.doc-meta .history-btn:not([hidden]) + .danger { margin-left: 0; }
 .synopsis {
   resize: none; overflow: hidden; font-size: 13px; color: var(--muted); background: var(--bg); border-color: transparent;
   margin-bottom: 20px;
@@ -213,6 +215,33 @@ dialog menu { display: flex; justify-content: flex-end; gap: 8px; padding: 0; ma
 .exports li { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid var(--line); }
 .exports a { color: var(--accent); }
 
+/* ---------- History ---------- */
+.hist-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.hist-head h3 span { font: 400 15px var(--sans); }
+.hist-grid { display: grid; grid-template-columns: 290px 1fr; gap: 16px; height: min(62vh, 640px); }
+.hist-list { list-style: none; margin: 0; padding: 0; overflow-y: auto; border-right: 1px solid var(--line); padding-right: 8px; }
+.hist-list li { padding: 7px 9px; border-radius: 6px; cursor: pointer; }
+.hist-list li:hover { background: var(--hover); }
+.hist-list li.active { background: var(--sel); }
+.hist-row { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.hist-words { margin-left: auto; font-size: 11px; color: var(--muted); white-space: nowrap; }
+.hist-words.up { color: var(--ok); } .hist-words.down { color: var(--danger); }
+.hist-msg { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.badge { font-size: 10px; padding: 1px 6px; border-radius: 9px; background: var(--hover); color: var(--muted); white-space: nowrap; }
+.badge.milestone { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); font-weight: 600; }
+.badge.restore { background: color-mix(in srgb, #4a86c5 18%, transparent); color: #4a86c5; }
+.hist-view { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.hist-toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; font-size: 12px; }
+.hist-toolbar #hist-summary { flex: 1; }
+label.check.inline { padding: 0; margin: 0; }
+.hist-diff {
+  flex: 1; overflow-y: auto; background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 14px 18px; font: 15px/1.65 var(--serif); white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.hist-diff ins { background: color-mix(in srgb, var(--ok) 20%, transparent); text-decoration: none; border-radius: 2px; }
+.hist-diff del { background: color-mix(in srgb, var(--danger) 18%, transparent); color: var(--danger); border-radius: 2px; }
+.hist-diff .gap { display: block; margin: 8px 0; color: var(--muted); font: italic 12px var(--sans); text-align: center; }
+
 .toast {
   position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--fg); color: var(--bg);
   padding: 10px 16px; border-radius: 8px; font-size: 13px; box-shadow: 0 6px 24px rgba(0,0,0,.2); z-index: 10; max-width: 80vw;
@@ -226,5 +255,6 @@ dialog menu { display: flex; justify-content: flex-end; gap: 8px; padding: 0; ma
 @media (max-width: 800px) {
   .panes, body.no-ai .panes { grid-template-columns: 1fr; }
   .sidebar, .ai-pane { display: none; }
-  .book-grid, .publish-grid { grid-template-columns: 1fr; }
+  .book-grid, .publish-grid, .hist-grid { grid-template-columns: 1fr; }
+  .hist-grid { height: auto; } .hist-list { max-height: 30vh; border-right: none; }
 }

@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
+from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
@@ -11,10 +15,12 @@ from pydantic import BaseModel
 
 from . import prompts
 from .export import EXPORTERS
+from .history import HistoryTracker, ProjectHistory, git_available, word_diff
 from .llm import THINKING, LLMError, LLMSettings, list_models, stream_chat
 from .project import CHAPTER_KINDS, CHAPTER_STATUSES, Project, ProjectError, Workspace, check_filename
 
 STATIC = Path(__file__).parent / "static"
+log = logging.getLogger("novelbang")
 
 
 class NewProject(BaseModel):
@@ -52,6 +58,17 @@ class ModelProbe(BaseModel):
     api_key: str | None = None
 
 
+class Snapshot(BaseModel):
+    kind: str = "milestone"
+    message: str = ""
+
+
+class Restore(BaseModel):
+    version: str
+    type: str
+    name: str
+
+
 class AIRequest(BaseModel):
     file: str | None = None
     before: str = ""  # text before the cursor / selection
@@ -65,10 +82,69 @@ class AIRequest(BaseModel):
 def create_app(
     workspace_dir: Path, settings_path: Path | None = None, extra_hosts: tuple[str, ...] = ()
 ) -> FastAPI:
-    app = FastAPI(title="NovelBang")
+    tracker = HistoryTracker()
+    histories: dict[Path, ProjectHistory] = {}
+
+    def history_for(p: Project) -> ProjectHistory:
+        return histories.setdefault(p.root, ProjectHistory(p.root))
+
+    def describe(p: Project):
+        titles = {f"chapters/{c.file}": c.title for c in p.chapters}
+
+        def label(changes: list[tuple[str, str]]) -> str:
+            names: list[str] = []
+            for status, path in changes:
+                if path in titles or path.startswith("chapters/"):
+                    name = titles.get(path, path.removeprefix("chapters/"))
+                elif path.startswith("notes/"):
+                    name = f"{path.removeprefix('notes/').removesuffix('.md')} (note)"
+                elif path == "novel.toml":
+                    name = "book details"
+                elif path.startswith("assets/"):
+                    name = "cover"
+                else:
+                    name = path
+                if status == "D":
+                    name = f"removed {name}"
+                elif status == "A" and path != "novel.toml":
+                    name = f"new {name}"
+                if name not in names:
+                    names.append(name)
+            shown = ", ".join(names[:4])
+            return shown + (f" and {len(names) - 4} more" if len(names) > 4 else "")
+
+        return label
+
+    def snapshot(p: Project, kind: str, message: str = "", allow_empty: bool = False) -> str | None:
+        if not git_available():
+            return None
+        return history_for(p).snapshot(kind, message, describe(p), allow_empty)
+
+    def flush_history(force: bool = False) -> None:
+        for root in tracker.due(force):
+            try:
+                snapshot(Project.load(root), "auto")
+            except Exception:
+                log.exception("Automatic snapshot of %s failed", root)
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI):
+        async def loop():
+            while True:
+                await asyncio.sleep(15)
+                await asyncio.to_thread(flush_history)
+
+        task = asyncio.create_task(loop())
+        try:
+            yield
+        finally:
+            task.cancel()
+            await asyncio.to_thread(flush_history, True)
+
+    app = FastAPI(title="NovelBang", lifespan=lifespan)
     # Only answer requests addressed to this machine (blocks DNS-rebinding from websites).
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "::1", *extra_hosts])
-    ws = Workspace(workspace_dir)
+    ws = Workspace(workspace_dir, on_change=lambda p: tracker.touched(p.root))
     settings = LLMSettings.load(settings_path)
 
     @app.exception_handler(ProjectError)
@@ -87,6 +163,7 @@ def create_app(
             ],
             "notes": p.list_notes(),
             "has_cover": p.cover_path() is not None,
+            "history": git_available(),
         }
 
     # ---- projects ----------------------------------------------------------
@@ -111,7 +188,14 @@ def create_app(
 
     @app.get("/api/projects/{pid}")
     def get_project(pid: str):
-        return summary(ws.get(pid))
+        p = ws.get(pid)
+        if tracker.first_visit(p.root):
+            # Captures edits made while NovelBang wasn't running (other editors, sync).
+            try:
+                snapshot(p, "session")
+            except ProjectError:
+                log.exception("Session snapshot of %s failed", p.root)
+        return summary(p)
 
     @app.put("/api/projects/{pid}/meta")
     def put_meta(pid: str, body: dict):
@@ -202,9 +286,61 @@ def create_app(
         data = await request.body()
         if len(data) > 50 * 1024 * 1024:
             raise HTTPException(413, "Cover image is too large (50 MB max)")
+        with ws.edit(pid) as p:
+            p.set_cover(data, ext)
+            return summary(p)
+
+    # ---- history -----------------------------------------------------------
+
+    def doc_path(p: Project, type: str, name: str) -> str:
+        if type == "chapter":
+            p.chapter(name)
+            return f"chapters/{check_filename(name)}"
+        if type == "note":
+            return f"notes/{check_filename(name)}"
+        raise HTTPException(400, "type must be chapter or note")
+
+    @app.get("/api/projects/{pid}/history")
+    def history(pid: str, type: str, name: str):
         p = ws.get(pid)
-        p.set_cover(data, ext)
-        return summary(p)
+        path = doc_path(p, type, name)
+        return {"versions": [v.__dict__ for v in history_for(p).versions(path)]}
+
+    @app.get("/api/projects/{pid}/history/{version}")
+    def history_version(pid: str, version: str, type: str, name: str):
+        p = ws.get(pid)
+        path = doc_path(p, type, name)
+        old = history_for(p).read(version, path)
+        if old is None:
+            raise HTTPException(404, "This document didn't exist in that version")
+        current = (p.root / path).read_text("utf-8") if (p.root / path).is_file() else ""
+        return {"text": old, "diff": word_diff(old, current)}
+
+    @app.post("/api/projects/{pid}/history")
+    def take_snapshot(pid: str, body: Snapshot):
+        p = ws.get(pid)
+        if body.kind not in ("milestone", "checkpoint"):
+            raise HTTPException(400, "kind must be milestone or checkpoint")
+        version = snapshot(p, body.kind, body.message.strip(), allow_empty=body.kind == "milestone")
+        return {"version": version}
+
+    @app.post("/api/projects/{pid}/history/restore")
+    def restore(pid: str, body: Restore):
+        with ws.edit(pid) as p:
+            path = doc_path(p, body.type, body.name)
+            h = history_for(p)
+            old = h.read(body.version, path)
+            if old is None:
+                raise HTTPException(404, "This document didn't exist in that version")
+            title = p.chapter(body.name).title if body.type == "chapter" else body.name.removesuffix(".md")
+            when = datetime.fromtimestamp(h.timestamp(body.version)).strftime("%Y-%m-%d %H:%M")
+            snapshot(p, "checkpoint", f"Before restoring {title}")
+            if body.type == "chapter":
+                p.write_chapter(body.name, old)
+            else:
+                p.write_note(body.name, old)
+            snapshot(p, "restore", f"Restored {title} to {when}")
+            return {"text": old, "project": summary(p)}
 
     # ---- export ------------------------------------------------------------
 

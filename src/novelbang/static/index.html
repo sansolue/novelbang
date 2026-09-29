@@ -70,6 +70,7 @@
               <option value="final">Final</option>
             </select>
             <span class="muted" id="doc-words"></span>
+            <button class="ghost small history-btn" data-action="history" title="Earlier versions of this document">History</button>
             <button class="ghost small danger" data-action="delete-doc">Delete</button>
           </div>
           <textarea id="doc-synopsis" class="synopsis" rows="1"
@@ -206,6 +207,29 @@
       <span class="muted">(qwen3, deepseek-r1, gpt-oss… — slower, and thinking counts against max tokens)</span></label>
     <p class="muted small-label">Roughly 4 characters per token. Keep this below your model's context window (e.g. 12000 chars ≈ 3k tokens).</p>
     <menu><button value="cancel" formnovalidate>Cancel</button><button class="primary" value="ok">Save</button></menu>
+  </form>
+</dialog>
+
+<dialog id="history-dialog" class="wide">
+  <form method="dialog">
+    <div class="hist-head">
+      <h3>History <span class="muted" id="hist-title"></span></h3>
+      <button type="button" class="small" data-action="milestone" title="Save a named version of the whole project">★ Save milestone…</button>
+    </div>
+    <div class="hist-grid">
+      <ol id="hist-list" class="hist-list"></ol>
+      <div class="hist-view">
+        <div class="hist-toolbar">
+          <span id="hist-summary" class="muted"></span>
+          <label class="check inline"><input type="checkbox" id="hist-full"> Full text</label>
+          <button type="button" class="primary small" data-action="hist-restore" id="hist-restore">Restore this version</button>
+        </div>
+        <div id="hist-diff" class="hist-diff"></div>
+      </div>
+    </div>
+    <p class="muted small-label">A version is saved automatically a minute after you stop typing, every few minutes while you write,
+      and before every AI edit or restore. Restoring never loses anything — the current text is saved first.</p>
+    <menu><button value="close">Close</button></menu>
   </form>
 </dialog>
 

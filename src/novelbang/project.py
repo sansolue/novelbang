@@ -21,7 +21,7 @@ import threading
 import tomllib
 import unicodedata
 import uuid
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
@@ -405,9 +405,10 @@ class Project:
 class Workspace:
     """A directory holding many novel projects."""
 
-    def __init__(self, root: Path):
+    def __init__(self, root: Path, on_change: Callable[[Project], None] | None = None):
         self.root = root
         root.mkdir(parents=True, exist_ok=True)
+        self.on_change = on_change  # called after every successful edit() block
         self._locks: dict[str, threading.Lock] = {}
         self._locks_guard = threading.Lock()
 
@@ -417,7 +418,10 @@ class Workspace:
         with self._locks_guard:
             lock = self._locks.setdefault(project_id, threading.Lock())
         with lock:
-            yield self.get(project_id)
+            project = self.get(project_id)
+            yield project
+        if self.on_change:
+            self.on_change(project)
 
     def list(self) -> list[Project]:
         projects = []

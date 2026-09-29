@@ -46,6 +46,7 @@ the-salt-road/
   assets/cover.jpg      optional cover (JPEG/PNG, ideally 1600×2560)
   exports/              generated files (git-ignored)
   trash/                deleted chapters and notes end up here, never erased
+  .novelbang/           version history (see below)
 ```
 
 Chapter files are named once and never renamed; order lives in `novel.toml`, so
@@ -54,6 +55,30 @@ hand is picked up and added to the end of the book.
 
 Chapters have a **type**: *front matter* (dedication, prologue, epigraph), *chapter*
 (numbered), or *back matter* (afterword, acknowledgements, about the author).
+
+## Version history
+
+Every chapter and note has a **History** button showing earlier versions with
+word counts, a word-by-word diff against the current text, and one-click
+restore. Versions are saved automatically:
+
+- a minute after you stop typing, and every 5 minutes during long sessions
+- when you open a project (catching edits made in other editors)
+- right before an AI continuation or rewrite is inserted, and before a restore
+- when NovelBang shuts down
+
+**★ Save milestone…** records a named version of the whole project
+(“First draft complete”). Restoring never loses anything: the current text is
+saved as a version first.
+
+History is a private git repository in `.novelbang/history.git`, separate from
+any git repo you keep yourself (it's hidden from yours, and ignores your global
+git config). It needs `git` installed; without it the History button is hidden.
+You can browse it with normal tools:
+
+```sh
+git --git-dir=.novelbang/history.git --work-tree=. log --stat
+```
 
 ## How the co-writer uses context
 
@@ -79,6 +104,7 @@ uv run novelbang /tmp/ws --no-browser --port 8765
 - `src/novelbang/llm.py` — streaming OpenAI-compatible client; settings in
   `~/.config/novelbang/settings.toml`
 - `src/novelbang/prompts.py` — prompt building and context trimming
+- `src/novelbang/history.py` — version history (private git repo per project) and word diff
 - `src/novelbang/export/` — EPUB and web exporters (pure Python, no pandoc)
 - `src/novelbang/server.py` — FastAPI JSON API; `static/` — the UI (no build step)
 
