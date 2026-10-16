@@ -100,24 +100,36 @@ class RenderedChapter:
         return self.chapter.title
 
 
+def render_markdown(
+    project: Project, text: str, image_src: Callable[[Path], str] | None = None
+) -> tuple[str, list[Path], list[str]]:
+    """Markdown → XHTML with pictures resolved: (body, pictures shown, srcs not found).
+
+    `image_src` maps a picture in assets/ to the src the export uses for it;
+    pictures that can't be found are left out.
+    """
+    images: list[Path] = []
+    missing: list[str] = []
+
+    def src_for(src: str) -> str | None:
+        path = project.image_path(src)
+        if path is None:
+            if src not in missing:
+                missing.append(src)
+            return None
+        if path not in images:
+            images.append(path)
+        return image_src(path) if image_src else src
+
+    return _rewrite_images(md_to_xhtml(text), src_for), images, missing
+
+
 def render_chapters(
     project: Project, image_src: Callable[[Path], str] | None = None
 ) -> list[RenderedChapter]:
-    """Render every chapter. `image_src` maps a picture in assets/ to the src the
-    export uses for it; pictures that can't be found are left out of the book."""
     out = []
     for ch, num in project.numbered():
-        images: list[Path] = []
-
-        def src_for(src: str) -> str | None:
-            path = project.image_path(src)
-            if path is None:
-                return None
-            if path not in images:
-                images.append(path)
-            return image_src(path) if image_src else src
-
-        body = _rewrite_images(md_to_xhtml(project.read_chapter(ch.file)), src_for)
+        body, images, _ = render_markdown(project, project.read_chapter(ch.file), image_src)
         out.append(RenderedChapter(ch, num, body, images))
     return out
 

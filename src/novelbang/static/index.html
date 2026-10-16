@@ -73,6 +73,7 @@
             </select>
             <span class="muted" id="doc-words"></span>
             <label class="button ghost small picture-btn" title="Add a picture where the cursor is (or paste / drop one into the text)">Picture…<input type="file" id="picture-file" accept="image/jpeg,image/png,image/gif" multiple hidden></label>
+            <button class="ghost small" id="preview-btn" data-action="preview" title="See this chapter as it will look in the book (Esc to go back)">Preview</button>
             <button class="ghost small history-btn" data-action="history" title="Earlier versions of this document">History</button>
             <button class="ghost small danger" data-action="delete-doc">Delete</button>
           </div>
@@ -82,6 +83,10 @@
         </div>
         <textarea id="doc-text" class="prose" spellcheck="true"
           placeholder="Start writing… (Markdown: *italic*, **bold**, *** on its own line for a scene break; paste or drop a picture to add it)"></textarea>
+        <div id="doc-preview" class="preview" hidden>
+          <p id="preview-missing" class="preview-missing" hidden></p>
+          <iframe id="preview-frame" sandbox="allow-same-origin" title="Book preview"></iframe>
+        </div>
       </div>
 
       <!-- book details -->
@@ -112,6 +117,13 @@
               <label>Publisher <input name="publisher"></label>
               <label>ISBN <input name="isbn"></label>
             </div>
+            <label>Pictures added to chapters
+              <select name="picture_size">
+                <option value="1600">Shrink to 1600 px on the long side (recommended for ebooks)</option>
+                <option value="2400">Shrink to 2400 px (detailed maps and art)</option>
+                <option value="0">Keep the original size</option>
+              </select>
+            </label>
             <label>Copyright line <input name="rights" placeholder="© 2026 Your Name. All rights reserved."></label>
             <div class="row">
               <label>Word target <input name="target_words" type="number" min="0" step="1000"></label>

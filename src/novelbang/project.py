@@ -153,6 +153,7 @@ class Metadata:
     identifier: str = field(default_factory=lambda: f"urn:uuid:{uuid.uuid4()}")
     number_chapters: bool = True
     target_words: int = 80000
+    picture_size: int = 1600  # long side, in px, pictures are shrunk to when added (0 = keep)
 
     @classmethod
     def from_dict(cls, data: dict) -> Metadata:

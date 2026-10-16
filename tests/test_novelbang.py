@@ -339,3 +339,21 @@ def test_picture_upload_api(tmp_path):
     r = c.post(f"/api/projects/{pid}/images?name=../../x.png", content=_png(), headers={"Content-Type": "image/png"})
     assert r.json()["src"] == "../assets/images/x.png"
 
+
+def test_preview_and_assets_api(tmp_path):
+    c = TestClient(create_app(tmp_path / "ws", settings_path=tmp_path / "s.toml"), base_url="http://127.0.0.1")
+    p = c.post("/api/projects", json={"title": "Ash"}).json()
+    pid, file = p["id"], p["chapters"][0]["file"]
+    src = c.post(f"/api/projects/{pid}/images?name=my map.png", content=_png(), headers={"Content-Type": "image/png"}).json()["src"]
+    text = f'Before.\n\n![Map]({src} "The road")\n\n![lost](../assets/images/lost.png)\n'
+    r = c.post(f"/api/projects/{pid}/preview", json={"text": text, "file": file}).json()
+    assert "Chapter 1" in r["html"] and "<figcaption>The road</figcaption>" in r["html"]
+    assert f'src="/api/projects/{pid}/assets/images/my-map.png"' in r["html"]
+    assert r["missing"] == ["../assets/images/lost.png"] and "figure.illustration" in r["css"]
+    assert c.get(f"/api/projects/{pid}/assets/images/my-map.png").content == _png()
+    for bad in ("../novel.toml", "..%2Fnovel.toml", "images/lost.png", "%2E%2E/%2E%2E/s.toml"):
+        assert c.get(f"/api/projects/{pid}/assets/{bad}").status_code == 404
+    note = c.post(f"/api/projects/{pid}/preview", json={"text": "Just *notes*."}).json()
+    assert "<h1>" not in note["html"] and "<em>notes</em>" in note["html"]
+    meta = c.put(f"/api/projects/{pid}/meta", json={"picture_size": "0"}).json()["meta"]
+    assert meta["picture_size"] == 0

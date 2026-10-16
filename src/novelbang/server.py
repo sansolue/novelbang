@@ -6,6 +6,7 @@ import logging
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
@@ -15,6 +16,7 @@ from pydantic import BaseModel
 
 from . import prompts
 from .export import EXPORTERS
+from .export.render import BOOK_CSS, RenderedChapter, render_markdown
 from .history import HistoryTracker, ProjectHistory, git_available, word_diff
 from .llm import THINKING, LLMError, LLMSettings, list_models, stream_chat
 from .project import CHAPTER_KINDS, CHAPTER_STATUSES, Project, ProjectError, Workspace, check_filename
@@ -68,6 +70,11 @@ class Restore(BaseModel):
     version: str
     type: str
     name: str
+
+
+class PreviewRequest(BaseModel):
+    text: str
+    file: str | None = None  # the chapter it belongs to, for its heading
 
 
 class AIRequest(BaseModel):
@@ -307,6 +314,26 @@ def create_app(
         with ws.edit(pid) as p:
             # The browser's type wins over the file's extension (pasted screenshots are "image.png").
             return {"src": p.add_image(data, Path(name).stem + ext)}
+
+    @app.get("/api/projects/{pid}/assets/{path:path}")
+    def get_asset(pid: str, path: str):
+        # Only pictures inside assets/, checked the same way the exporters check them.
+        found = ws.get(pid).image_path(f"../assets/{path}")
+        if not found:
+            raise HTTPException(404)
+        return FileResponse(found)
+
+    @app.post("/api/projects/{pid}/preview")
+    def preview(pid: str, body: PreviewRequest):
+        p = ws.get(pid)
+        assets = p.assets_dir.resolve()
+        html, _, missing = render_markdown(
+            p, body.text, lambda path: f"/api/projects/{quote(pid)}/assets/{quote(path.relative_to(assets).as_posix())}"
+        )
+        if body.file:
+            num = dict((c.file, n) for c, n in p.numbered()).get(body.file)
+            html = RenderedChapter(p.chapter(body.file), num, html).heading_html(p.meta.number_chapters) + html
+        return {"html": html, "css": BOOK_CSS, "missing": missing}
 
     # ---- history -----------------------------------------------------------
 

@@ -73,6 +73,12 @@ EPUB, embedded in the print HTML, and as an `assets/` folder in the website and 
 pack. Use JPEG for photos and PNG for line art, at about 1600 px on the long side.
 Publish checks warn about oversized pictures and flag missing ones.
 
+Pictures are shrunk to 1600 px on the long side when you add them (2400 px or full
+size are options in **Book details**). Shrinking also drops camera metadata such as GPS
+location. GIFs are kept as they are, so animations survive. **Preview** above the text
+shows the chapter as the book will render it, using the ebook's own stylesheet, with
+pictures and captions in place and any missing pictures listed.
+
 ## Chapter synopses (the co-writer's memory)
 
 A local model can't read your whole book, so it relies on a short synopsis

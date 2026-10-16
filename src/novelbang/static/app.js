@@ -222,6 +222,7 @@ async function openView(type, id) {
     return first ? go("chapter", first.file) : go("book");
   }
   state.view = { type, id };
+  closePreview();
   $("#doc-view").hidden = $("#book-view").hidden = $("#empty-view").hidden = true;
 
   if (type === "book") {
@@ -499,8 +500,9 @@ async function insertPictures(files) {
       toast(`${file.name}: pictures must be JPEG, PNG or GIF`, true);
       continue;
     }
+    const body = await shrinkPicture(file, state.project.meta.picture_size).catch(() => file);
     const res = await fetch(`/api/projects/${pid()}/images?name=${enc(file.name)}`, {
-      method: "POST", headers: { "Content-Type": file.type }, body: file,
+      method: "POST", headers: { "Content-Type": file.type }, body,
     });
     if (!res.ok) {
       let msg = res.statusText;
@@ -509,6 +511,7 @@ async function insertPictures(files) {
       continue;
     }
     const { src } = await res.json();
+    closePreview();
     const alt = file.name.replace(/\.[^.]*$/, "").replace(/[-_]+/g, " ").replace(/[[\]]/g, "").trim();
     const { selectionStart: s, selectionEnd: e, value } = ta;
     const before = value.slice(0, s), after = value.slice(e);
@@ -521,6 +524,84 @@ async function insertPictures(files) {
     autogrow(ta);
     updateDocWords();
   }
+}
+
+// Shrinks a picture so its long side is at most `maxPx` (0 = leave it), re-encoding it in
+// its own format. Halving in steps keeps big reductions sharp in every browser. GIFs are
+// left alone, since redrawing would drop their animation.
+async function shrinkPicture(file, maxPx) {
+  if (!maxPx || file.type === "image/gif") return file;
+  const bmp = await createImageBitmap(file, { imageOrientation: "from-image" });
+  const scale = maxPx / Math.max(bmp.width, bmp.height);
+  if (scale >= 1) { bmp.close(); return file; }
+  const tw = Math.round(bmp.width * scale), th = Math.round(bmp.height * scale);
+  let src = bmp, w = bmp.width, h = bmp.height;
+  for (;;) {
+    const last = w / 2 < tw * 1.0001;
+    const nw = last ? tw : Math.round(w / 2), nh = last ? th : Math.round(h / 2);
+    const canvas = el("canvas", { width: nw, height: nh });
+    const ctx = canvas.getContext("2d");
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(src, 0, 0, nw, nh);
+    src = canvas; w = nw; h = nh;
+    if (last) break;
+  }
+  bmp.close();
+  const blob = await new Promise((r) => src.toBlob(r, file.type, 0.88));
+  return blob || file;
+}
+
+// ---------------------------------------------------------------- preview
+
+const PREVIEW_CSS = "body { background: #fff; color: #222; font-size: 18px; padding: 2em 0 4em; }";
+
+// Renders the editor's text with the same code and stylesheet as the ebook.
+async function openPreview() {
+  const { type, id } = state.view;
+  const r = await api("POST", `/api/projects/${pid()}/preview`, {
+    text: $("#doc-text").value, file: type === "chapter" ? id : null,
+  });
+  if (state.view?.id !== id) return; // switched documents while rendering
+  const frame = $("#preview-frame");
+  frame.srcdoc = `<!doctype html><html><head><meta charset="utf-8">`
+    + `<style>${r.css}${PREVIEW_CSS}</style></head><body>${r.html}</body></html>`;
+  const missing = $("#preview-missing");
+  missing.hidden = !r.missing.length;
+  missing.textContent = r.missing.length
+    ? `Not found, so left out of the book: ${r.missing.join(", ")} (pictures must be JPEG, PNG or GIF in assets/)`
+    : "";
+  $("#doc-text").hidden = true;
+  $("#doc-preview").hidden = false;
+  $("#preview-btn").textContent = "Edit";
+  $("#preview-btn").classList.add("active");
+}
+
+function closePreview() {
+  if ($("#doc-preview").hidden) return;
+  $("#doc-preview").hidden = true;
+  $("#preview-frame").srcdoc = "";
+  $("#doc-text").hidden = false;
+  $("#preview-btn").textContent = "Preview";
+  $("#preview-btn").classList.remove("active");
+  requestAnimationFrame(() => autogrow($("#doc-text")));
+}
+
+function togglePreview() {
+  if ($("#doc-preview").hidden) openPreview().catch((e) => toast(e.message, true));
+  else closePreview();
+}
+
+// The frame grows to fit the page, so the editor pane scrolls it like the text.
+let previewObserver = null;
+function fitPreview() {
+  const frame = $("#preview-frame");
+  const doc = frame.contentDocument;
+  previewObserver?.disconnect();
+  if (!doc?.body) return;
+  const fit = () => (frame.style.height = doc.documentElement.scrollHeight + "px");
+  previewObserver = new ResizeObserver(fit);
+  previewObserver.observe(doc.body);
+  fit();
 }
 
 // ---------------------------------------------------------------- chapters & notes
@@ -630,6 +711,7 @@ function setBusy(busy) {
 async function runWriteAction(action) {
   if (state.view?.type !== "chapter") return toast("Open a chapter first", true);
   if (!state.settings?.model) { toast("Choose a model first", true); return openSettings(); }
+  closePreview();
   await flushSave();
   const ta = $("#doc-text");
   let start = ta.selectionStart, end = ta.selectionEnd;
@@ -1042,6 +1124,7 @@ function wire() {
       document.body.classList.toggle("no-ai");
       localStorage.setItem("nb-no-ai", document.body.classList.contains("no-ai") ? "1" : "");
     },
+    preview: togglePreview,
     "new-chapter": newChapter,
     "new-note": newNote,
     "delete-doc": deleteDoc,
@@ -1104,6 +1187,7 @@ function wire() {
     if (at?.offsetNode === ta) ta.setSelectionRange(at.offset, at.offset);
     insertPictures(files);
   });
+  $("#preview-frame").addEventListener("load", fitPreview);
   $("#picture-file").addEventListener("change", (e) => {
     insertPictures([...e.target.files]);
     e.target.value = "";
@@ -1134,7 +1218,8 @@ function wire() {
     const mod = e.metaKey || e.ctrlKey;
     if (mod && e.key === "s") { e.preventDefault(); flushSave(); }
     if (mod && e.key === "j" && state.project) { e.preventDefault(); runWriteAction("continue"); }
-    if (e.key === "Escape" && document.body.classList.contains("focus")) document.body.classList.remove("focus");
+    if (e.key === "Escape" && !$("#doc-preview").hidden) closePreview();
+    else if (e.key === "Escape" && document.body.classList.contains("focus")) document.body.classList.remove("focus");
   });
   window.addEventListener("beforeunload", (e) => {
     if (state.dirty) {
