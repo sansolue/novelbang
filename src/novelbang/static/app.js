@@ -52,7 +52,7 @@ function el(tag, attrs = {}, ...children) {
   return node;
 }
 
-const countWords = (s) => (s.match(/[\p{L}\p{N}'’-]+/gu) || []).length;
+const countWords = (s) => (s.replace(/!\[[^\]]*\]\([^)]*\)/g, " ").match(/[\p{L}\p{N}'’-]+/gu) || []).length;
 const fmt = (n) => n.toLocaleString();
 const pid = () => enc(state.project.id);
 
@@ -244,7 +244,9 @@ async function openView(type, id) {
     }
     const ta = $("#doc-text");
     ta.value = text;
-    ta.placeholder = chapter ? "Start writing…  (Markdown: *italic*, **bold**, *** alone on a line = scene break)" : "Notes…";
+    ta.placeholder = chapter
+      ? "Start writing…  (Markdown: *italic*, **bold**, *** alone on a line = scene break; paste or drop a picture to add it)"
+      : "Notes…";
     $("#doc-view").hidden = false;
     updateDocWords();
     requestAnimationFrame(() => { autogrow(ta); autogrow($("#doc-synopsis")); });
@@ -486,6 +488,39 @@ async function uploadCover(file) {
   state.project = await res.json();
   fillCover();
   toast("Cover updated");
+}
+
+// Uploads pictures to assets/images/ and puts each on its own line at the cursor as
+// ![alt](../assets/images/x.jpg). Add "a caption" after the path to caption it.
+async function insertPictures(files) {
+  const ta = $("#doc-text");
+  for (const file of files) {
+    if (!["image/jpeg", "image/png", "image/gif"].includes(file.type)) {
+      toast(`${file.name}: pictures must be JPEG, PNG or GIF`, true);
+      continue;
+    }
+    const res = await fetch(`/api/projects/${pid()}/images?name=${enc(file.name)}`, {
+      method: "POST", headers: { "Content-Type": file.type }, body: file,
+    });
+    if (!res.ok) {
+      let msg = res.statusText;
+      try { msg = (await res.json()).detail || msg; } catch {}
+      toast(`${file.name}: ${msg}`, true);
+      continue;
+    }
+    const { src } = await res.json();
+    const alt = file.name.replace(/\.[^.]*$/, "").replace(/[-_]+/g, " ").replace(/[[\]]/g, "").trim();
+    const { selectionStart: s, selectionEnd: e, value } = ta;
+    const before = value.slice(0, s), after = value.slice(e);
+    const pre = !before || before.endsWith("\n\n") ? "" : before.endsWith("\n") ? "\n" : "\n\n";
+    const post = after.startsWith("\n\n") ? "" : after.startsWith("\n") ? "\n" : "\n\n";
+    const text = `${pre}![${alt}](${src})${post}`;
+    ta.focus();
+    document.execCommand("insertText", false, text) || ta.setRangeText(text, s, e, "end");
+    markDirty();
+    autogrow(ta);
+    updateDocWords();
+  }
 }
 
 // ---------------------------------------------------------------- chapters & notes
@@ -1047,6 +1082,31 @@ function wire() {
     const mod = e.metaKey || e.ctrlKey;
     if (mod && e.key === "i") { e.preventDefault(); wrapSelection(ta, "*"); }
     if (mod && e.key === "b") { e.preventDefault(); wrapSelection(ta, "**"); }
+  });
+  const pictures = (dt) => [...(dt?.files || [])].filter((f) => f.type.startsWith("image/"));
+  ta.addEventListener("paste", (e) => {
+    const files = pictures(e.clipboardData);
+    if (files.length) { e.preventDefault(); insertPictures(files); }
+  });
+  ta.addEventListener("dragover", (e) => {
+    if (!e.dataTransfer.types.includes("Files")) return;
+    e.preventDefault();
+    ta.classList.add("drop-target");
+  });
+  ta.addEventListener("dragleave", () => ta.classList.remove("drop-target"));
+  ta.addEventListener("drop", (e) => {
+    ta.classList.remove("drop-target");
+    const files = pictures(e.dataTransfer);
+    if (!files.length) return;
+    e.preventDefault();
+    // Put the picture where it was dropped, where the browser can tell us; else at the cursor.
+    const at = document.caretPositionFromPoint?.(e.clientX, e.clientY);
+    if (at?.offsetNode === ta) ta.setSelectionRange(at.offset, at.offset);
+    insertPictures(files);
+  });
+  $("#picture-file").addEventListener("change", (e) => {
+    insertPictures([...e.target.files]);
+    e.target.value = "";
   });
   $("#doc-title").addEventListener("change", (e) => state.view?.type === "chapter" && saveChapterMeta({ title: e.target.value }));
   $("#doc-kind").addEventListener("change", (e) => saveChapterMeta({ kind: e.target.value }));

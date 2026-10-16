@@ -20,6 +20,7 @@ from .llm import THINKING, LLMError, LLMSettings, list_models, stream_chat
 from .project import CHAPTER_KINDS, CHAPTER_STATUSES, Project, ProjectError, Workspace, check_filename
 
 STATIC = Path(__file__).parent / "static"
+IMAGE_MIME = {"image/jpeg": ".jpg", "image/png": ".png", "image/gif": ".gif"}
 log = logging.getLogger("novelbang")
 
 
@@ -101,6 +102,8 @@ def create_app(
                     name = f"{path.removeprefix('notes/').removesuffix('.md')} (note)"
                 elif path == "novel.toml":
                     name = "book details"
+                elif path.startswith("assets/images/"):
+                    name = f"picture {path.removeprefix('assets/images/')}"
                 elif path.startswith("assets/"):
                     name = "cover"
                 else:
@@ -290,6 +293,20 @@ def create_app(
         with ws.edit(pid) as p:
             p.set_cover(data, ext)
             return summary(p)
+
+    # ---- pictures ----------------------------------------------------------
+
+    @app.post("/api/projects/{pid}/images")
+    async def add_image(pid: str, name: str, request: Request):
+        ext = IMAGE_MIME.get(request.headers.get("content-type", "").split(";")[0])
+        if not ext:
+            raise HTTPException(400, "Pictures must be JPEG, PNG or GIF")
+        data = await request.body()
+        if len(data) > 50 * 1024 * 1024:
+            raise HTTPException(413, "Picture is too large (50 MB max)")
+        with ws.edit(pid) as p:
+            # The browser's type wins over the file's extension (pasted screenshots are "image.png").
+            return {"src": p.add_image(data, Path(name).stem + ext)}
 
     # ---- history -----------------------------------------------------------
 

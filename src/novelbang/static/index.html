@@ -72,6 +72,7 @@
               <option value="final">Final</option>
             </select>
             <span class="muted" id="doc-words"></span>
+            <label class="button ghost small picture-btn" title="Add a picture where the cursor is (or paste / drop one into the text)">Picture…<input type="file" id="picture-file" accept="image/jpeg,image/png,image/gif" multiple hidden></label>
             <button class="ghost small history-btn" data-action="history" title="Earlier versions of this document">History</button>
             <button class="ghost small danger" data-action="delete-doc">Delete</button>
           </div>
@@ -80,7 +81,7 @@
           <p id="syn-hint" class="syn-hint" hidden><span></span> <button class="ghost small" data-action="syn-update">Update with AI</button></p>
         </div>
         <textarea id="doc-text" class="prose" spellcheck="true"
-          placeholder="Start writing… (Markdown: *italic*, **bold**, *** on its own line for a scene break)"></textarea>
+          placeholder="Start writing… (Markdown: *italic*, **bold**, *** on its own line for a scene break; paste or drop a picture to add it)"></textarea>
       </div>
 
       <!-- book details -->

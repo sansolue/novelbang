@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import html
 import re
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from html.entities import name2codepoint
+from pathlib import Path
+from urllib.parse import quote
 
 import markdown
 
@@ -14,6 +17,11 @@ from ..project import Chapter, Project
 _ENTITY = re.compile(r"&([A-Za-z][A-Za-z0-9]*);")
 _XML_ENTITIES = {"amp", "lt", "gt", "quot", "apos"}
 _HR = re.compile(r"<hr\s*/?>")
+_IMG = re.compile(r"<img\b[^>]*?/>")
+_SRC = re.compile(r'\ssrc="([^"]*)"')
+_TITLE = re.compile(r'\stitle="([^"]*)"')
+_LONE_IMG = re.compile(r"<p>\s*(<img\b[^>]*?/>)\s*</p>")
+_EMPTY_P = re.compile(r"<p>\s*</p>\n?")
 
 
 def _numeric_entities(text: str) -> str:
@@ -38,6 +46,30 @@ def md_to_xhtml(text: str) -> str:
     return _numeric_entities(out)
 
 
+def _rewrite_images(xhtml: str, src_for: Callable[[str], str | None]) -> str:
+    """Point each <img> at `src_for(src)`, dropping it when that's None; a picture
+    on its own line becomes a <figure>, with its Markdown title as the caption."""
+
+    def img(m: re.Match) -> str:
+        tag = m.group(0)
+        src = _SRC.search(tag)
+        new = src_for(html.unescape(src.group(1))) if src else None
+        if new is None:
+            return ""
+        return tag.replace(src.group(0), f' src="{esc(new)}"')
+
+    def figure(m: re.Match) -> str:
+        tag = m.group(1)
+        title = _TITLE.search(tag)
+        caption = f"\n<figcaption>{title.group(1)}</figcaption>" if title else ""
+        if title:
+            tag = tag.replace(title.group(0), "")
+        return f'<figure class="illustration">\n{tag}{caption}\n</figure>'
+
+    xhtml = _IMG.sub(img, xhtml)
+    return _EMPTY_P.sub("", _LONE_IMG.sub(figure, xhtml))
+
+
 def esc(text: str) -> str:
     return html.escape(text, quote=True)
 
@@ -47,6 +79,7 @@ class RenderedChapter:
     chapter: Chapter
     number: int | None
     body: str  # XHTML fragment
+    images: list[Path] = field(default_factory=list)  # pictures it shows, in order
 
     @property
     def label(self) -> str:
@@ -67,11 +100,31 @@ class RenderedChapter:
         return self.chapter.title
 
 
-def render_chapters(project: Project) -> list[RenderedChapter]:
-    return [
-        RenderedChapter(ch, num, md_to_xhtml(project.read_chapter(ch.file)))
-        for ch, num in project.numbered()
-    ]
+def render_chapters(
+    project: Project, image_src: Callable[[Path], str] | None = None
+) -> list[RenderedChapter]:
+    """Render every chapter. `image_src` maps a picture in assets/ to the src the
+    export uses for it; pictures that can't be found are left out of the book."""
+    out = []
+    for ch, num in project.numbered():
+        images: list[Path] = []
+
+        def src_for(src: str) -> str | None:
+            path = project.image_path(src)
+            if path is None:
+                return None
+            if path not in images:
+                images.append(path)
+            return image_src(path) if image_src else src
+
+        body = _rewrite_images(md_to_xhtml(project.read_chapter(ch.file)), src_for)
+        out.append(RenderedChapter(ch, num, body, images))
+    return out
+
+
+def asset_href(project: Project, path: Path) -> str:
+    """Where an exported book keeps a picture: assets/… mirroring the project, URL-quoted."""
+    return "assets/" + quote(path.relative_to(project.assets_dir.resolve()).as_posix())
 
 
 BOOK_CSS = """
@@ -95,4 +148,9 @@ nav ol { list-style: none; padding-left: 0; }
 nav li { margin: 0.4em 0; }
 .cover { text-align: center; margin: 0; padding: 0; }
 .cover img { max-width: 100%; max-height: 100%; }
+img { max-width: 100%; }
+figure.illustration { margin: 1.5em 0; text-align: center; page-break-inside: avoid; break-inside: avoid; }
+figure.illustration img { max-height: 95vh; }
+figcaption { font-size: 0.85em; font-style: italic; margin-top: 0.5em; text-align: center; }
+figure + p { text-indent: 0; }
 """

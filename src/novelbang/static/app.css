@@ -142,9 +142,8 @@ body.focus .doc-head { opacity: .25; transition: opacity .3s; } body.focus .doc-
 .doc-title:focus { outline: none; }
 .doc-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 12px; }
 .doc-meta select { width: auto; padding: 3px 6px; font-size: 12px; }
-.doc-meta .danger { margin-left: auto; }
-.doc-meta .history-btn { margin-left: auto; }
-.doc-meta .history-btn:not([hidden]) + .danger { margin-left: 0; }
+.doc-meta .picture-btn { margin: 0 0 0 auto; color: var(--fg); }
+.prose.drop-target { outline: 2px dashed var(--accent); outline-offset: 6px; }
 .synopsis {
   resize: none; overflow: hidden; font-size: 13px; color: var(--muted); background: var(--bg); border-color: transparent;
   margin-bottom: 20px;

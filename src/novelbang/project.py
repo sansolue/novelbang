@@ -5,6 +5,7 @@
       chapters/*.md       one Markdown file per chapter, prose only
       notes/*.md          outline, characters, world, style guide, anything else
       assets/cover.jpg    optional cover image (jpg or png)
+      assets/images/      pictures used in chapters: ![alt](../assets/images/map.jpg "caption")
       exports/            generated ebooks and web bundles
       trash/              deleted chapters/notes are moved here, never erased
 
@@ -27,6 +28,7 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
+from urllib.parse import unquote
 
 import tomli_w
 
@@ -34,6 +36,11 @@ PROJECT_FILE = "novel.toml"
 CHAPTER_KINDS = ("front", "chapter", "back")
 CHAPTER_STATUSES = ("idea", "draft", "revised", "final")
 COVER_NAMES = ("cover.jpg", "cover.jpeg", "cover.png")
+# Pictures every ebook store and reader accepts (EPUB core media types).
+IMAGE_TYPES = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".gif": "image/gif"}
+IMAGES_DIR = "images"  # under assets/
+# Above this, a picture is probably straight off a camera and worth resizing.
+LARGE_IMAGE_BYTES = 2 * 1024 * 1024
 DEFAULT_NOTES = {
     "outline.md": "# Outline\n\nThe story beat by beat.\n",
     "characters.md": "# Characters\n\n## Protagonist\n\n- Name:\n- Wants:\n- Needs:\n- Flaw:\n",
@@ -58,6 +65,8 @@ SYNOPSIS_MIN_WORDS = 50
 _PARA_SPLIT = re.compile(r"\n\s*\n")
 _SAFE_FILE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._ -]{0,120}\.md$")
 _WORD = re.compile(r"\b[\w'’-]+\b")
+# Inline Markdown images: ![alt](src "title"); group 1 is the src.
+_MD_IMAGE = re.compile(r"!\[[^\]]*\]\(\s*<?([^)\s>]+)>?(?:\s+[\"'(][^)]*)?\)")
 
 
 class ProjectError(Exception):
@@ -71,7 +80,12 @@ def slugify(text: str, fallback: str = "untitled") -> str:
 
 
 def count_words(text: str) -> int:
-    return len(_WORD.findall(text))
+    return len(_WORD.findall(_MD_IMAGE.sub(" ", text)))
+
+
+def image_refs(text: str) -> list[str]:
+    """The src of every inline Markdown image in `text`."""
+    return _MD_IMAGE.findall(text)
 
 
 def convert_field(current: object, value: object) -> object:
@@ -421,6 +435,40 @@ class Project:
         path.write_bytes(data)
         return path
 
+    # ---- images ------------------------------------------------------------
+
+    @property
+    def images_dir(self) -> Path:
+        return self.assets_dir / IMAGES_DIR
+
+    def add_image(self, data: bytes, name: str) -> str:
+        """Store a picture under assets/images/ and return the Markdown src a chapter uses for it."""
+        ext = Path(name).suffix.lower()
+        if ext not in IMAGE_TYPES:
+            raise ProjectError("Pictures must be JPEG, PNG or GIF")
+        ext = ".jpg" if ext == ".jpeg" else ext
+        self.images_dir.mkdir(parents=True, exist_ok=True)
+        stem = slugify(Path(name).stem, "picture")
+        path, n = self.images_dir / f"{stem}{ext}", 2
+        while path.exists():
+            path, n = self.images_dir / f"{stem}-{n}{ext}", n + 1
+        path.write_bytes(data)
+        return f"../assets/{IMAGES_DIR}/{path.name}"
+
+    def image_path(self, src: str) -> Path | None:
+        """The picture a chapter's image src points to, if it's a usable file inside assets/.
+
+        Srcs are relative to the chapter (../assets/images/x.jpg), so they also
+        resolve in any other Markdown editor. Remote URLs aren't allowed: ebooks
+        must carry their pictures inside the file.
+        """
+        if "://" in src or src.startswith(("/", "data:")):
+            return None
+        path = (self.chapters_dir / unquote(src)).resolve()
+        if path.suffix.lower() not in IMAGE_TYPES or not path.is_file():
+            return None
+        return path if path.is_relative_to(self.assets_dir.resolve()) else None
+
     # ---- stats & checks ----------------------------------------------------
 
     def word_counts(self) -> dict[str, int]:
@@ -462,6 +510,27 @@ class Project:
                 add("warn", f"“{c.title}” is empty.")
             elif c.status in ("idea", "draft"):
                 add("info", f"“{c.title}” is still marked {c.status}.")
+        images: dict[Path, int] = {}
+        for c in self.chapters:
+            if self.is_missing(c.file):
+                continue
+            for src in image_refs(self.read_chapter(c.file)):
+                if path := self.image_path(src):
+                    images[path] = path.stat().st_size
+                elif "://" in src:
+                    add("error", f"“{c.title}” uses an online picture ({src}). Ebooks must carry their "
+                        "pictures inside the file — download it and add it to the chapter instead.")
+                else:
+                    add("error", f"“{c.title}” uses a picture that can't be found or isn't a JPEG, PNG "
+                        f"or GIF in assets/: {src}")
+        for path, size in images.items():
+            if size > LARGE_IMAGE_BYTES:
+                add("warn", f"Picture {path.name} is {size / 2**20:.1f} MB. Resizing it to about 1600 px "
+                    "on the long side keeps the ebook small.")
+        total = sum(images.values())
+        if total > 10 * 2**20:
+            add("warn", f"Pictures add {total / 2**20:.0f} MB to the ebook. KDP charges a delivery fee "
+                "per MB on its 70% royalty plan, and big files are slow to download.")
         return issues
 
     # ---- internal ----------------------------------------------------------

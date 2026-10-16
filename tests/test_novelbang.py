@@ -278,3 +278,64 @@ def test_concurrent_edits_are_not_lost(project):
     loaded = Project.load(project.root)
     assert [c.synopsis for c in loaded.chapters] == [f"s{i}-19" for i in range(len(files))]
     assert not list(project.root.rglob("*.tmp"))
+
+
+def _png() -> bytes:
+    import struct
+    import zlib
+
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+
+    ihdr = struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)
+    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + chunk(b"IDAT", zlib.compress(b"\0\0\0\0")) + chunk(b"IEND", b"")
+
+
+def test_pictures_in_every_export(project):
+    first = project.chapters[1].file
+    src = project.add_image(_png(), "The Map.PNG")
+    assert src == "../assets/images/the-map.png"
+    assert project.add_image(_png(), "the map.png").endswith("the-map-2.png")
+    with pytest.raises(ProjectError):
+        project.add_image(b"x", "evil.svg")
+    project.write_chapter(first, f'{PROSE}\n![A map]({src} "The coast road")\n\nAfter the map.\n\n'
+                                 "![gone](../assets/images/nope.png) and ![x](../novel.toml)\n")
+    assert project.word_counts()[first] < len(PROSE.split()) + 10
+
+    out = EXPORTERS["epub"][2](project)
+    with zipfile.ZipFile(out) as z:
+        assert z.read("OEBPS/assets/images/the-map.png") == _png()
+        opf = z.read("OEBPS/content.opf").decode()
+        assert 'href="assets/images/the-map.png" media-type="image/png"' in opf
+        chapter = z.read("OEBPS/ch002.xhtml").decode()
+        ElementTree.fromstring(chapter)
+        assert '<figure class="illustration">' in chapter
+        assert 'src="assets/images/the-map.png"' in chapter
+        assert "<figcaption>The coast road</figcaption>" in chapter
+        assert "nope.png" not in chapter and "novel.toml" not in chapter
+        assert "nope" not in opf
+
+    html = EXPORTERS["html"][2](project).read_text()
+    assert "data:image/png;base64," in html and "../assets" not in html
+    for fmt in ("site", "serial"):
+        with zipfile.ZipFile(EXPORTERS[fmt][2](project)) as z:
+            assert any(n.endswith("/assets/images/the-map.png") for n in z.namelist())
+            pages = [z.read(n).decode() for n in z.namelist() if n.endswith((".html", ".md"))]
+            assert any('src="assets/images/the-map.png"' in p or "](assets/images/the-map.png" in p for p in pages)
+
+    checks = [c for c in project.publish_checks() if c["level"] == "error"]
+    assert any("nope.png" in c["message"] for c in checks)
+    assert any("novel.toml" in c["message"] for c in checks)
+    assert not any("the-map" in c["message"] for c in checks)
+
+
+def test_picture_upload_api(tmp_path):
+    c = TestClient(create_app(tmp_path / "ws", settings_path=tmp_path / "s.toml"), base_url="http://127.0.0.1")
+    pid = c.post("/api/projects", json={"title": "Ash"}).json()["id"]
+    r = c.post(f"/api/projects/{pid}/images?name=image.png", content=_png(), headers={"Content-Type": "image/png"})
+    assert r.json() == {"src": "../assets/images/image.png"}
+    r = c.post(f"/api/projects/{pid}/images?name=../../x.png", content=b"<svg/>", headers={"Content-Type": "image/svg+xml"})
+    assert r.status_code == 400
+    r = c.post(f"/api/projects/{pid}/images?name=../../x.png", content=_png(), headers={"Content-Type": "image/png"})
+    assert r.json()["src"] == "../assets/images/x.png"
+

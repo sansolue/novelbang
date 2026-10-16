@@ -9,9 +9,10 @@ from __future__ import annotations
 import zipfile
 from datetime import UTC, datetime
 from pathlib import Path
+from urllib.parse import unquote
 
-from ..project import Project, slugify
-from .render import BOOK_CSS, RenderedChapter, esc, render_chapters
+from ..project import IMAGE_TYPES, Project, slugify
+from .render import BOOK_CSS, RenderedChapter, asset_href, esc, render_chapters
 
 XHTML_HEAD = """<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE html>
@@ -38,7 +39,7 @@ def build_epub(project: Project, out_dir: Path | None = None) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
     out = out_dir / f"{slugify(m.title, 'book')}.epub"
 
-    chapters = render_chapters(project)
+    chapters = render_chapters(project, lambda path: asset_href(project, path))
     cover = project.cover_path()
     # (id, href, media-type, properties, in_spine)
     manifest: list[tuple[str, str, str, str, bool]] = []
@@ -78,6 +79,12 @@ def build_epub(project: Project, out_dir: Path | None = None) -> Path:
         body = f'<section epub:type="{epub_type}">\n{rc.heading_html(m.number_chapters)}\n{rc.body}\n</section>'
         files[href] = _page(lang, rc.chapter.title, body)
         manifest.append((f"ch{i:03d}", href, "application/xhtml+xml", "", True))
+
+    images = list(dict.fromkeys(path for rc in chapters for path in rc.images))
+    for i, path in enumerate(images, 1):
+        href = asset_href(project, path)
+        files[unquote(href)] = path.read_bytes()
+        manifest.append((f"img{i}", href, IMAGE_TYPES[path.suffix.lower()], "", False))
 
     files["style.css"] = BOOK_CSS
     manifest.append(("css", "style.css", "text/css", "", False))

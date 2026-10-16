@@ -14,9 +14,10 @@ import base64
 import shutil
 import zipfile
 from pathlib import Path
+from urllib.parse import unquote
 
-from ..project import Project, slugify
-from .render import BOOK_CSS, esc, render_chapters
+from ..project import IMAGE_TYPES, Project, slugify
+from .render import BOOK_CSS, RenderedChapter, asset_href, esc, render_chapters
 
 PRINT_CSS = """
 @page { size: 6in 9in; margin: 0.75in 0.7in; }
@@ -61,13 +62,11 @@ def build_manuscript_html(project: Project, out_dir: Path | None = None) -> Path
     m = project.meta
     out_dir = out_dir or project.exports_dir
     out_dir.mkdir(parents=True, exist_ok=True)
-    chapters = render_chapters(project)
+    chapters = render_chapters(project, _data_uri)
     parts = []
     cover = project.cover_path()
     if cover:
-        mime = "image/png" if cover.suffix.lower() == ".png" else "image/jpeg"
-        data = base64.b64encode(cover.read_bytes()).decode()
-        parts.append(f'<section class="cover-page"><img src="data:{mime};base64,{data}" alt=""></section>')
+        parts.append(f'<section class="cover-page"><img src="{_data_uri(cover)}" alt=""></section>')
     title = f'<section class="title-page page"><h1>{esc(m.title)}</h1>'
     if m.subtitle:
         title += f'<p class="subtitle">{esc(m.subtitle)}</p>'
@@ -96,7 +95,8 @@ def build_website(project: Project, out_dir: Path | None = None) -> Path:
     if site.exists():
         shutil.rmtree(site)
     site.mkdir(parents=True)
-    chapters = render_chapters(project)
+    chapters = render_chapters(project, lambda path: asset_href(project, path))
+    _copy_images(project, chapters, site)
     css_link = '<link rel="stylesheet" href="style.css">\n'
     (site / "style.css").write_text(BOOK_CSS + SITE_CSS, "utf-8")
 
@@ -147,19 +147,26 @@ def build_serial_pack(project: Project, out_dir: Path | None = None) -> Path:
     if pack.exists():
         shutil.rmtree(pack)
     pack.mkdir(parents=True)
-    for i, rc in enumerate(render_chapters(project), 1):
+    chapters = render_chapters(project, lambda path: asset_href(project, path))
+    _copy_images(project, chapters, pack)
+    for i, rc in enumerate(chapters, 1):
         stem = f"{i:02d}-{slugify(rc.chapter.title, 'chapter')}"
         title = rc.toc_title(m.number_chapters)
         (pack / f"{stem}.html").write_text(f"<h1>{esc(title)}</h1>\n{rc.body}\n", "utf-8")
-        (pack / f"{stem}.md").write_text(
-            f"# {title}\n\n{project.read_chapter(rc.chapter.file).strip()}\n", "utf-8"
-        )
+        text = project.read_chapter(rc.chapter.file).strip().replace("../assets/", "assets/")
+        (pack / f"{stem}.md").write_text(f"# {title}\n\n{text}\n", "utf-8")
     readme = (
         f"{m.title} — serial pack\n\n"
         "One file per chapter, in reading order.\n"
         "- .html: open in a browser, select all, copy, and paste into the platform's rich editor\n"
         "  (Royal Road, Wattpad, AO3 'Rich Text', Substack, Medium) to keep italics and scene breaks.\n"
         "- .md: for platforms that accept Markdown.\n"
+        + (
+            "\nPictures are in assets/. Pasted text can't bring them along: upload each one with\n"
+            "the platform's image button where it appears in the chapter.\n"
+            if any(rc.images for rc in chapters)
+            else ""
+        )
     )
     (pack / "README.txt").write_text(readme, "utf-8")
     return _zip_dir(pack)
@@ -187,6 +194,17 @@ def build_markdown(project: Project, out_dir: Path | None = None) -> Path:
     out = out_dir / f"{_slug(project)}.md"
     out.write_text("\n".join(head) + "\n".join(body), "utf-8")
     return out
+
+
+def _data_uri(path: Path) -> str:
+    return f"data:{IMAGE_TYPES[path.suffix.lower()]};base64,{base64.b64encode(path.read_bytes()).decode()}"
+
+
+def _copy_images(project: Project, chapters: list[RenderedChapter], folder: Path) -> None:
+    for path in {p for rc in chapters for p in rc.images}:
+        dest = folder / unquote(asset_href(project, path))
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(path, dest)
 
 
 def _yaml(value: str) -> str:

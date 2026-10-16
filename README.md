@@ -44,6 +44,7 @@ the-salt-road/
     world.md
     outline.md          add any other .md notes you like
   assets/cover.jpg      optional cover (JPEG/PNG, ideally 1600×2560)
+  assets/images/        pictures used in chapters (JPEG/PNG/GIF)
   exports/              generated files (git-ignored)
   trash/                deleted chapters and notes end up here, never erased
   .novelbang/           version history and synopsis tracking (see below)
@@ -55,6 +56,22 @@ hand is picked up and added to the end of the book.
 
 Chapters have a **type**: *front matter* (dedication, prologue, epigraph), *chapter*
 (numbered), or *back matter* (afterword, acknowledgements, about the author).
+
+## Pictures
+
+Click **Picture…** above a chapter, or paste or drop an image into the text. The file
+goes into `assets/images/`, and a Markdown line is inserted where the cursor is:
+
+```markdown
+![Map of the coast road](../assets/images/map.jpg "The coast road, as Mara drew it")
+```
+
+The text in brackets is the alt text that screen readers announce. The quoted part is
+optional and becomes a caption. A picture on its own line is centred and scaled to fit
+the reader's screen. Each export packs pictures in the way its format needs: inside the
+EPUB, embedded in the print HTML, and as an `assets/` folder in the website and serial
+pack. Use JPEG for photos and PNG for line art, at about 1600 px on the long side.
+Publish checks warn about oversized pictures and flag missing ones.
 
 ## Chapter synopses (the co-writer's memory)
 
