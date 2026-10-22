@@ -159,6 +159,47 @@ body.focus .doc-head { opacity: .25; transition: opacity .3s; } body.focus .doc-
   font: 19px/1.7 var(--serif); letter-spacing: .005em;
 }
 .prose:focus { outline: none; }
+
+/* ---------- Find ---------- */
+.find-bar {
+  position: sticky; top: 0; z-index: 2; margin: 0 -12px 16px; padding: 8px 12px; display: flex; flex-direction: column; gap: 6px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: 0 4px 14px rgba(0,0,0,.08);
+}
+.find-row { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.find-row input:not([type=checkbox]) { flex: 1; min-width: 0; padding: 4px 8px; }
+.find-count { min-width: 64px; text-align: right; white-space: nowrap; }
+.find-row label.check { white-space: nowrap; }
+.find-options { display: flex; gap: 12px; margin: 6px 2px; font-size: 12px; }
+/* The marks layer sits behind the transparent textarea and wraps its text the same way. */
+.prose-wrap { position: relative; }
+.prose-wrap .prose { position: relative; display: block; width: 100%; }
+.find-marks {
+  position: absolute; inset: 0; pointer-events: none; color: transparent;
+  white-space: pre-wrap; overflow-wrap: break-word; font: 19px/1.7 var(--serif); letter-spacing: .005em;
+}
+.find-marks mark { color: transparent; background: color-mix(in srgb, var(--warn) 32%, transparent); border-radius: 2px; }
+.find-marks mark.current { background: color-mix(in srgb, var(--accent) 55%, transparent); }
+.synopsis.found { outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent); }
+
+/* ---------- Book search ---------- */
+.search-panel { display: flex; flex-direction: column; gap: 6px; padding: 0 4px; }
+.search-panel .side-head { margin: 6px 2px 4px; }
+.search-panel input { padding: 5px 8px; font-size: 13px; }
+#bs-replace-all { align-self: flex-start; }
+.bs-summary { font-size: 12px; margin: 4px 2px; }
+.bs-results { list-style: none; margin: 0; padding: 0; font-size: 12.5px; }
+.bs-doc { margin-bottom: 10px; }
+.bs-doc-head { display: flex; align-items: center; gap: 6px; padding: 4px 2px; font-weight: 600; }
+.bs-doc-head input { width: auto; margin: 0; }
+.bs-doc-head .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bs-doc-head .count { font-weight: 400; color: var(--muted); font-size: 11px; }
+.bs-doc.excluded .bs-hit { opacity: .45; }
+.bs-hit { display: block; width: 100%; text-align: left; border: none; background: none; padding: 4px 6px 4px 24px; border-radius: 6px;
+  white-space: normal; font: 13px/1.4 var(--serif); color: var(--fg); cursor: pointer; overflow-wrap: anywhere; }
+.bs-hit:hover { background: var(--hover); }
+.bs-hit mark { background: color-mix(in srgb, var(--warn) 35%, transparent); color: inherit; border-radius: 2px; }
+.bs-hit .field { font: 10px var(--sans); text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-right: 4px; }
+.bs-more { padding: 2px 6px 0 24px; font-size: 11px; }
 .empty { display: grid; place-items: center; height: 100%; color: var(--muted); }
 
 .book-form h2 { font: 600 28px var(--serif); margin: 0 0 4px; }

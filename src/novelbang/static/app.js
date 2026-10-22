@@ -127,6 +127,11 @@ async function route() {
     }
     state.chat = [];
     renderChat();
+    closeBookSearch();
+    bsearch.result = null;
+    bsearch.excluded.clear();
+    $("#bs-query").value = "";
+    renderBookSearch();
   }
   showStudio();
   await openView(type || "", id || "");
@@ -311,6 +316,8 @@ async function openView(type, id) {
     requestAnimationFrame(() => { autogrow(ta); autogrow($("#doc-synopsis")); });
     $("#editor-pane").scrollTop = 0;
     if (!text) ta.focus();
+    if (bsearch.jump) requestAnimationFrame(applyJump);
+    else refreshFind({ from: 0, scroll: false });
   } else {
     $("#empty-view").hidden = false;
   }
@@ -628,7 +635,8 @@ async function openPreview() {
   missing.textContent = r.missing.length
     ? `Not found, so left out of the book: ${r.missing.join(", ")} (pictures must be JPEG, PNG or GIF in assets/)`
     : "";
-  $("#doc-text").hidden = true;
+  closeFind();
+  $("#prose-wrap").hidden = true;
   $("#doc-preview").hidden = false;
   $("#preview-btn").textContent = "Edit";
   $("#preview-btn").classList.add("active");
@@ -638,7 +646,7 @@ function closePreview() {
   if ($("#doc-preview").hidden) return;
   $("#doc-preview").hidden = true;
   $("#preview-frame").srcdoc = "";
-  $("#doc-text").hidden = false;
+  $("#prose-wrap").hidden = false;
   $("#preview-btn").textContent = "Preview";
   $("#preview-btn").classList.remove("active");
   requestAnimationFrame(() => autogrow($("#doc-text")));
@@ -660,6 +668,273 @@ function fitPreview() {
   previewObserver = new ResizeObserver(fit);
   previewObserver.observe(doc.body);
   fit();
+}
+
+// ---------------------------------------------------------------- find & replace
+// Same rules as the server's search.py: straight and curly quotes match each other, the
+// search text is literal, and picture paths (the part in brackets after a picture) are skipped.
+
+const QUOTES = { "'": "'‘’", "‘": "'‘’", "’": "'‘’", '"': '"“”', "“": '"“”', "”": '"“”' };
+const IMAGE_RE = /!\[[^\]]*\]\(\s*<?([^)\s>]+)>?(?:\s+["'(][^)]*)?\)/dg;
+
+const WORD_CHAR = /[\p{L}\p{N}\p{M}_]/u;
+
+function findPattern(query, { matchCase = false } = {}) {
+  const body = [...query].map((ch) => (QUOTES[ch] ? `[${QUOTES[ch]}]` : ch.replace(/[\\^$.*+?()[\]{}|/]/g, "\\$&"))).join("");
+  return new RegExp(body, "gu" + (matchCase ? "" : "i"));
+}
+
+function findAll(text, query, { matchCase = false, wholeWord = false } = {}) {
+  if (!query) return [];
+  const guarded = [...text.matchAll(IMAGE_RE)].map((m) => m.indices[1]);
+  // Word edges are checked here rather than with a lookbehind, which older macOS WebKit lacks.
+  const isWord = (i) => i >= 0 && i < text.length && WORD_CHAR.test(String.fromCodePoint(text.codePointAt(i)));
+  const re = findPattern(query, { matchCase }), out = [];
+  for (let m; (m = re.exec(text)); ) {
+    const s = m.index, e = s + m[0].length;
+    if (e === s) { re.lastIndex++; continue; }
+    if (wholeWord && (isWord(s - 1) || isWord(e))) { re.lastIndex = s + 1; continue; }
+    if (!guarded.some(([gs, ge]) => gs < e && s < ge)) out.push([s, e]);
+  }
+  return out;
+}
+
+const find = { matches: [], current: -1 };
+const findOpts = () => ({ matchCase: $("#find-case").checked, wholeWord: $("#find-word").checked });
+
+function openFind(query) {
+  if (!["chapter", "note"].includes(state.view?.type)) return;
+  closePreview();
+  const bar = $("#find-bar"), input = $("#find-input"), ta = $("#doc-text");
+  const selected = ta.value.slice(ta.selectionStart, ta.selectionEnd);
+  if (query != null) input.value = query;
+  else if (selected && !selected.includes("\n") && selected.length < 100) input.value = selected;
+  bar.hidden = false;
+  input.focus();
+  input.select();
+  refreshFind({ from: ta.selectionStart });
+}
+
+function closeFind() {
+  if ($("#find-bar").hidden) return;
+  $("#find-bar").hidden = true;
+  find.matches = [];
+  find.current = -1;
+  $("#find-marks").replaceChildren();
+  const ta = $("#doc-text");
+  ta.focus({ preventScroll: true });
+}
+
+// Recomputes the matches. `from`: make the first match at or after this offset current.
+function refreshFind({ from = null, scroll = true } = {}) {
+  if ($("#find-bar").hidden) return;
+  const text = $("#doc-text").value, query = $("#find-input").value;
+  let matches = [];
+  try { matches = findAll(text, query, findOpts()); } catch { matches = []; }
+  const prev = find.matches[find.current];
+  find.matches = matches;
+  if (!matches.length) find.current = -1;
+  else if (from != null) find.current = Math.max(0, matches.findIndex(([s]) => s >= from));
+  else find.current = Math.max(0, matches.findIndex(([s]) => s >= (prev ? prev[0] : 0)));
+  if (from != null && matches.length && matches[find.current][0] < from) find.current = 0;
+  renderFind(scroll);
+}
+
+function renderFind(scroll) {
+  const text = $("#doc-text").value, { matches, current } = find;
+  const query = $("#find-input").value;
+  $("#find-count").textContent = !query ? "" : matches.length ? `${current + 1} of ${fmt(matches.length)}` : "No results";
+  const parts = [];
+  let last = 0;
+  matches.forEach(([s, e], i) => {
+    parts.push(text.slice(last, s), el("mark", { class: i === current ? "current" : "" }, text.slice(s, e)));
+    last = e;
+  });
+  parts.push(text.slice(last) + "​"); // a final newline still takes a line, as in the textarea
+  $("#find-marks").replaceChildren(...parts);
+  // Only when moving to a match: refreshing while typing mustn't move the cursor.
+  const [s, e] = matches[current] || [];
+  if (s != null && scroll) {
+    $("#doc-text").setSelectionRange(s, e);
+    $("#find-marks mark.current")?.scrollIntoView({ block: "center" });
+  }
+}
+
+function stepFind(dir) {
+  if (!find.matches.length) return;
+  find.current = (find.current + dir + find.matches.length) % find.matches.length;
+  renderFind(true);
+}
+
+// Edits through execCommand, so ⌘Z undoes them like typing.
+function replaceRange(ta, s, e, text) {
+  const back = document.activeElement;
+  ta.focus({ preventScroll: true });
+  ta.setSelectionRange(s, e);
+  if (!document.execCommand("insertText", false, text)) {
+    ta.setRangeText(text, s, e, "end");
+    ta.dispatchEvent(new Event("input"));
+  }
+  back?.focus({ preventScroll: true });
+}
+
+function replaceOne() {
+  const m = find.matches[find.current];
+  if (!m) return;
+  const ta = $("#doc-text"), replacement = $("#replace-input").value;
+  replaceRange(ta, m[0], m[1], replacement);
+  refreshFind({ from: m[0] + replacement.length });
+}
+
+function replaceAllInDoc() {
+  const ta = $("#doc-text"), { matches } = find;
+  if (!matches.length) return;
+  const replacement = $("#replace-input").value, text = ta.value;
+  // One edit from the first match to the last, so it's a single undo step.
+  const first = matches[0][0], end = matches[matches.length - 1][1];
+  let out = "", last = first;
+  for (const [s, e] of matches) { out += text.slice(last, s) + replacement; last = e; }
+  const top = $("#editor-pane").scrollTop;
+  replaceRange(ta, first, end, out);
+  $("#editor-pane").scrollTop = top;
+  toast(`Replaced ${fmt(matches.length)} ${matches.length === 1 ? "match" : "matches"} (⌘Z / Ctrl+Z undoes it)`);
+  refreshFind({ scroll: false });
+}
+
+// ---------------------------------------------------------------- book-wide search
+
+const bsearch = { seq: 0, timer: null, result: null, excluded: new Set(), jump: null };
+const bsOpts = () => ({ match_case: $("#bs-case").checked, whole_word: $("#bs-word").checked });
+const docKey = (d) => `${d.type}/${d.name}`;
+
+function openBookSearch(query) {
+  if (!state.project) return;
+  document.body.classList.remove("focus");
+  $("#side-main").hidden = true;
+  $("#search-panel").hidden = false;
+  const input = $("#bs-query");
+  if (query != null) input.value = query;
+  input.focus();
+  input.select();
+  runBookSearch();
+}
+
+function closeBookSearch() {
+  $("#search-panel").hidden = true;
+  $("#side-main").hidden = false;
+}
+
+function scheduleBookSearch() {
+  clearTimeout(bsearch.timer);
+  bsearch.timer = setTimeout(runBookSearch, 250);
+}
+
+async function runBookSearch() {
+  clearTimeout(bsearch.timer);
+  const q = $("#bs-query").value, seq = ++bsearch.seq;
+  if (!q) {
+    bsearch.result = null;
+    return renderBookSearch();
+  }
+  await flushSave(); // search what's on screen, not what was last saved
+  const params = new URLSearchParams({ q, ...bsOpts() });
+  try {
+    const r = await api("GET", `/api/projects/${pid()}/search?${params}`);
+    if (seq !== bsearch.seq) return; // a newer search has started
+    bsearch.result = { ...r, query: q, opts: bsOpts() };
+  } catch (e) {
+    if (seq !== bsearch.seq) return;
+    bsearch.result = { error: e.message };
+  }
+  renderBookSearch();
+}
+
+function renderBookSearch() {
+  const r = bsearch.result, list = $("#bs-results"), summary = $("#bs-summary");
+  $("#bs-replace-all").disabled = !r?.total || !r.docs.some((d) => !bsearch.excluded.has(docKey(d)));
+  if (!r) { summary.textContent = ""; return list.replaceChildren(); }
+  if (r.error) { summary.textContent = r.error; return list.replaceChildren(); }
+  const docs = r.docs.length;
+  summary.textContent = r.total
+    ? `${fmt(r.total)} ${r.total === 1 ? "match" : "matches"} in ${docs} ${docs === 1 ? "document" : "documents"}`
+      + (r.shown < r.total ? ` (showing the first ${fmt(r.shown)})` : "")
+    : "No matches.";
+  list.replaceChildren(...r.docs.map((d) => {
+    const key = docKey(d), excluded = bsearch.excluded.has(key);
+    const shown = d.hits.length;
+    return el("li", { class: "bs-doc" + (excluded ? " excluded" : "") },
+      el("div", { class: "bs-doc-head" },
+        el("input", { type: "checkbox", checked: !excluded, title: "Include in Replace all",
+          onchange: (e) => { e.target.checked ? bsearch.excluded.delete(key) : bsearch.excluded.add(key); renderBookSearch(); } }),
+        el("span", { class: "name" }, (d.type === "note" ? "🗒 " : "") + d.title),
+        el("span", { class: "count" }, fmt(d.count))),
+      ...d.hits.map((h) => el("button", { type: "button", class: "bs-hit", onclick: () => jumpTo(d, h, r) },
+        h.field === "synopsis" ? el("span", { class: "field" }, "Synopsis") : null,
+        h.before, el("mark", {}, h.match), h.after)),
+      shown < d.count ? el("p", { class: "muted bs-more" }, `and ${fmt(d.count - shown)} more`) : null);
+  }));
+}
+
+// Opens the document at a hit, with the find bar set to the same search.
+async function jumpTo(doc, hit, r) {
+  $("#find-input").value = r.query;
+  $("#find-case").checked = r.opts.match_case;
+  $("#find-word").checked = r.opts.whole_word;
+  bsearch.jump = { type: doc.type, name: doc.name, hit };
+  if (isActive(doc.type, doc.name)) applyJump();
+  else go(doc.type, doc.name); // openView applies the jump once the text is loaded
+}
+
+function applyJump() {
+  const j = bsearch.jump;
+  bsearch.jump = null;
+  if (!j || !isActive(j.type, j.name)) return;
+  if (j.hit.field === "synopsis") {
+    const syn = $("#doc-synopsis");
+    syn.focus();
+    syn.setSelectionRange(j.hit.start, j.hit.end);
+    syn.classList.add("found");
+    setTimeout(() => syn.classList.remove("found"), 1500);
+    syn.scrollIntoView({ block: "center" });
+    return;
+  }
+  closePreview();
+  $("#find-bar").hidden = false;
+  refreshFind({ from: j.hit.start });
+}
+
+async function replaceInBook() {
+  const r = bsearch.result;
+  if (!r?.total) return;
+  const docs = r.docs.filter((d) => !bsearch.excluded.has(docKey(d)));
+  const n = docs.reduce((sum, d) => sum + d.count, 0);
+  const replacement = $("#bs-replace").value;
+  if (!confirm(`Replace ${fmt(n)} ${n === 1 ? "match" : "matches"} of “${r.query}” with “${replacement}” `
+      + `in ${docs.length} ${docs.length === 1 ? "document" : "documents"}?\n\n`
+      + "A version of the whole book is saved first, so History can undo this.")) return;
+  await flushSave();
+  const res = await api("POST", `/api/projects/${pid()}/replace`, {
+    query: r.query, replacement, ...r.opts, docs: docs.map(({ type, name }) => ({ type, name })),
+  });
+  state.project = res.project;
+  // Reload the open document if it changed.
+  if (state.view && res.changed.some((d) => isActive(d.type, d.name))) {
+    const { type, id } = state.view;
+    const url = type === "chapter" ? `/api/projects/${pid()}/chapters/${enc(id)}/text` : `/api/projects/${pid()}/notes/${enc(id)}`;
+    const { text } = await api("GET", url);
+    const ta = $("#doc-text");
+    ta.value = text;
+    state.dirty = false;
+    if (type === "chapter") { $("#doc-synopsis").value = state.project.chapters.find((c) => c.file === id)?.synopsis || ""; }
+    autogrow(ta);
+    autogrow($("#doc-synopsis"));
+    updateDocWords();
+    refreshFind({ scroll: false });
+  }
+  renderProject();
+  toast(`Replaced ${fmt(res.replaced)} ${res.replaced === 1 ? "match" : "matches"} in ${res.changed.length} `
+    + `${res.changed.length === 1 ? "document" : "documents"}`);
+  await runBookSearch();
 }
 
 // ---------------------------------------------------------------- chapters & notes
@@ -1194,6 +1469,15 @@ function wire() {
       localStorage.setItem("nb-no-ai", document.body.classList.contains("no-ai") ? "1" : "");
     },
     preview: togglePreview,
+    "find-next": () => stepFind(1),
+    "find-prev": () => stepFind(-1),
+    "find-close": closeFind,
+    "replace-one": replaceOne,
+    "replace-all": replaceAllInDoc,
+    "find-in-book": () => openBookSearch($("#find-input").value),
+    "search-book": () => openBookSearch(),
+    "search-close": closeBookSearch,
+    "bs-replace-all": () => replaceInBook().catch((e) => toast(e.message, true)),
     "reveal-log": () => desktop().reveal_log(),
     "change-workspace": () => changeWorkspace().catch((e) => toast(e.message, true)),
     "reveal-exports": () => window.pywebview.api.reveal_exports(state.project.id),
@@ -1232,7 +1516,7 @@ function wire() {
   });
 
   const ta = $("#doc-text");
-  ta.addEventListener("input", () => { markDirty(); autogrow(ta); updateDocWords(); });
+  ta.addEventListener("input", () => { markDirty(); autogrow(ta); updateDocWords(); refreshFind({ scroll: false }); });
   ta.addEventListener("keydown", (e) => {
     const mod = e.metaKey || e.ctrlKey;
     if (mod && e.key === "i") { e.preventDefault(); wrapSelection(ta, "*"); }
@@ -1260,6 +1544,19 @@ function wire() {
     insertPictures(files);
   });
   $("#preview-frame").addEventListener("load", fitPreview);
+  $("#find-input").addEventListener("input", () => refreshFind({ from: find.matches[find.current]?.[0] ?? $("#doc-text").selectionStart }));
+  for (const box of ["#find-case", "#find-word"]) $(box).addEventListener("change", () => refreshFind());
+  for (const input of ["#find-input", "#replace-input"]) {
+    $(input).addEventListener("keydown", (e) => {
+      if (e.key !== "Enter") return;
+      e.preventDefault();
+      if (input === "#replace-input" && !e.shiftKey) replaceOne();
+      else stepFind(e.shiftKey ? -1 : 1);
+    });
+  }
+  $("#bs-query").addEventListener("input", scheduleBookSearch);
+  $("#bs-query").addEventListener("keydown", (e) => e.key === "Enter" && runBookSearch());
+  for (const box of ["#bs-case", "#bs-word"]) $(box).addEventListener("change", runBookSearch);
   $("#picture-file").addEventListener("change", (e) => {
     insertPictures([...e.target.files]);
     e.target.value = "";
@@ -1290,7 +1587,16 @@ function wire() {
     const mod = e.metaKey || e.ctrlKey;
     if (mod && e.key === "s") { e.preventDefault(); flushSave(); }
     if (mod && e.key === "j" && state.project) { e.preventDefault(); runWriteAction("continue"); }
-    if (e.key === "Escape" && !$("#doc-preview").hidden) closePreview();
+    if (mod && e.key.toLowerCase() === "f" && state.project && !$("#studio").hidden) {
+      e.preventDefault();
+      if (e.shiftKey || !["chapter", "note"].includes(state.view?.type)) openBookSearch();
+      else openFind();
+    }
+    if (mod && e.key.toLowerCase() === "g" && !$("#find-bar").hidden) { e.preventDefault(); stepFind(e.shiftKey ? -1 : 1); }
+    if (e.key === "Escape" && document.querySelector("dialog[open]")) return; // the dialog closes itself
+    if (e.key === "Escape" && $("#find-bar").contains(document.activeElement)) closeFind();
+    else if (e.key === "Escape" && $("#search-panel").contains(document.activeElement)) closeBookSearch();
+    else if (e.key === "Escape" && !$("#doc-preview").hidden) closePreview();
     else if (e.key === "Escape" && document.body.classList.contains("focus")) document.body.classList.remove("focus");
   });
   window.addEventListener("beforeunload", (e) => {

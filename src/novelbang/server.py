@@ -26,6 +26,7 @@ from .history import HistoryTracker, ProjectHistory, git_available, word_diff
 from .logs import log_path, quotes_writing, without_writing
 from .llm import THINKING, LLMError, LLMSettings, list_models, stream_chat
 from .project import CHAPTER_KINDS, CHAPTER_STATUSES, Project, ProjectError, Workspace, check_filename
+from .search import pattern, replace_in, search
 
 STATIC = Path(__file__).parent / "static"
 IMAGE_MIME = {"image/jpeg": ".jpg", "image/png": ".png", "image/gif": ".gif"}
@@ -76,6 +77,19 @@ class Restore(BaseModel):
     version: str
     type: str
     name: str
+
+
+class DocRef(BaseModel):
+    type: str
+    name: str
+
+
+class ReplaceRequest(BaseModel):
+    query: str
+    replacement: str = ""
+    match_case: bool = False
+    whole_word: bool = False
+    docs: list[DocRef] | None = None  # None: every chapter and note
 
 
 class PreviewRequest(BaseModel):
@@ -322,6 +336,23 @@ def create_app(
         with ws.edit(pid) as p:
             p.delete_note(name)
             return summary(p)
+
+    # ---- search --------------------------------------------------------------
+    # The search text is the writing's, so it's never logged (see logs.py).
+
+    @app.get("/api/projects/{pid}/search")
+    def search_project(pid: str, q: str, match_case: bool = False, whole_word: bool = False):
+        return search(ws.get(pid), pattern(q, match_case, whole_word))
+
+    @app.post("/api/projects/{pid}/replace")
+    def replace_project(pid: str, body: ReplaceRequest):
+        pat = pattern(body.query, body.match_case, body.whole_word)
+        only = None if body.docs is None else {(d.type, d.name) for d in body.docs}
+        with ws.edit(pid) as p:
+            snapshot(p, "checkpoint", f"Before replacing “{body.query}” with “{body.replacement}”")
+            result = replace_in(p, pat, body.replacement, only)
+            log.info("Replaced %d matches in %d documents of %s", result["replaced"], len(result["changed"]), pid)
+            return {**result, "project": summary(p)}
 
     # ---- cover -------------------------------------------------------------
 

@@ -31,6 +31,7 @@
     </div>
     <span class="save-state" id="save-state"></span>
     <div class="spacer"></div>
+    <button class="ghost" data-action="search-book" title="Find and replace across the whole book (⇧⌘F / Ctrl+Shift+F)">Search</button>
     <button class="ghost" data-action="focus" title="Hide side panels (Esc to exit)">Focus</button>
     <button class="ghost" data-action="toggle-ai">Co-writer</button>
     <button class="ghost" data-action="settings">Settings</button>
@@ -39,6 +40,24 @@
 
   <div class="panes">
     <aside class="sidebar">
+      <!-- book-wide search, in place of the chapter list while it's open -->
+      <div id="search-panel" class="search-panel" hidden>
+        <div class="side-head">
+          <span>Search the book</span>
+          <button class="ghost small" data-action="search-close" title="Back to the chapters (Esc)">Done</button>
+        </div>
+        <input id="bs-query" placeholder="Find in chapters, synopses, notes" spellcheck="false" autocomplete="off">
+        <div class="find-options">
+          <label class="check inline"><input type="checkbox" id="bs-case"> Match case</label>
+          <label class="check inline"><input type="checkbox" id="bs-word"> Whole word</label>
+        </div>
+        <input id="bs-replace" placeholder="Replace with" spellcheck="false" autocomplete="off">
+        <button class="small" data-action="bs-replace-all" id="bs-replace-all" disabled
+          title="Replace in the ticked documents. A version is saved first, so History can undo it.">Replace all</button>
+        <p id="bs-summary" class="muted bs-summary"></p>
+        <ol id="bs-results" class="bs-results"></ol>
+      </div>
+      <div id="side-main">
       <button class="nav-item book-item" data-view="book">📘 Book details</button>
       <div class="side-head">
         <span>Manuscript</span>
@@ -53,6 +72,7 @@
       </div>
       <ul id="note-list" class="note-list"></ul>
       <p class="side-foot muted" id="project-path"></p>
+      </div>
     </aside>
 
     <main class="editor-pane" id="editor-pane">
@@ -82,8 +102,28 @@
             placeholder="Synopsis — what happens in this chapter. The co-writer uses these to remember the story so far."></textarea>
           <p id="syn-hint" class="syn-hint" hidden><span></span> <button class="ghost small" data-action="syn-update">Update with AI</button></p>
         </div>
-        <textarea id="doc-text" class="prose" spellcheck="true"
-          placeholder="Start writing… (Markdown: *italic*, **bold**, *** on its own line for a scene break; paste or drop a picture to add it)"></textarea>
+        <div id="find-bar" class="find-bar" hidden>
+          <div class="find-row">
+            <input id="find-input" placeholder="Find" spellcheck="false" autocomplete="off">
+            <span id="find-count" class="muted find-count"></span>
+            <button type="button" class="ghost small" data-action="find-prev" title="Previous (⇧Enter)">↑</button>
+            <button type="button" class="ghost small" data-action="find-next" title="Next (Enter)">↓</button>
+            <label class="check inline"><input type="checkbox" id="find-case"> Match case</label>
+            <label class="check inline"><input type="checkbox" id="find-word"> Whole word</label>
+            <button type="button" class="ghost small" data-action="find-close" title="Close (Esc)">✕</button>
+          </div>
+          <div class="find-row">
+            <input id="replace-input" placeholder="Replace with" spellcheck="false" autocomplete="off">
+            <button type="button" class="small" data-action="replace-one" title="Replace this match and go to the next">Replace</button>
+            <button type="button" class="small" data-action="replace-all" title="Replace every match in this document (⌘Z undoes it)">Replace all</button>
+            <button type="button" class="ghost small" data-action="find-in-book" title="Search for this across the whole book">Whole book…</button>
+          </div>
+        </div>
+        <div id="prose-wrap" class="prose-wrap">
+          <div id="find-marks" class="find-marks" aria-hidden="true"></div>
+          <textarea id="doc-text" class="prose" spellcheck="true"
+            placeholder="Start writing… (Markdown: *italic*, **bold**, *** on its own line for a scene break; paste or drop a picture to add it)"></textarea>
+        </div>
         <div id="doc-preview" class="preview" hidden>
           <p id="preview-missing" class="preview-missing" hidden></p>
           <iframe id="preview-frame" sandbox="allow-same-origin" title="Book preview"></iframe>

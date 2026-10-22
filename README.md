@@ -203,6 +203,23 @@ location. GIFs are kept as they are, so animations survive. **Preview** above th
 shows the chapter as the book will render it, using the ebook's own stylesheet, with
 pictures and captions in place and any missing pictures listed.
 
+## Find and replace
+
+**⌘F** (Ctrl+F) opens a find bar above the chapter or note you're in. Every match is
+highlighted. Enter and Shift+Enter (or ⌘G and ⇧⌘G) step through them, and **Replace** and
+**Replace all** change them. ⌘Z undoes either, like typing.
+
+**Search** in the top bar (⇧⌘F / Ctrl+Shift+F) searches the whole book: every chapter,
+the chapter synopses and the notes. Click a result to open it at that match. **Replace
+all** there changes every ticked document at once. Untick any you want left alone, such
+as a note that should keep a character's old name. A version of the whole book is saved
+first, so History can undo it.
+
+Both treat straight and curly quotes as the same, so `don't` finds `don’t`. They never
+change picture file paths, so replacing a name can't break a picture, though alt text
+and captions are changed like any other text. **Whole word** skips matches inside longer
+words: `Tom` doesn't find `Tomorrow`.
+
 ## Chapter synopses (the co-writer's memory)
 
 A local model can't read your whole book, so it relies on a short synopsis
