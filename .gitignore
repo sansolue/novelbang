@@ -12,3 +12,7 @@ wheels/
 # Editor swap files
 *.swp
 *.swo
+
+# IDE and OS files
+.idea/
+.DS_Store
