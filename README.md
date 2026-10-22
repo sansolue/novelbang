@@ -20,9 +20,12 @@ ollama serve & ollama pull llama3.1:8b         # → http://localhost:11434/v1
 llama-server -m model.gguf --port 8080          # → http://localhost:8080/v1
 
 # 2. Start NovelBang (opens your browser)
-./start.sh                       # projects live in ~/Novels
+./start.sh                       # your novels folder (see below)
 ./start.sh ~/Writing             # or anywhere you like
 ```
+
+Without a folder argument, NovelBang uses the folder chosen in the desktop app (saved in
+`~/.config/novelbang/app.toml`), else `~/Novels`. `NOVELBANG_WORKSPACE` overrides both.
 
 `start.sh` starts Ollama in the background if it's installed but not running
 (set `NOVELBANG_NO_OLLAMA=1` to skip that), then runs `uv run novelbang` with
@@ -41,8 +44,10 @@ packaging/build-macos.sh      # → dist/NovelBang.app and dist/NovelBang-<versi
 
 Open the `.dmg` and drag NovelBang into Applications. The app:
 
-- keeps your novels in `~/Novels` (set `NOVELBANG_WORKSPACE` to use another folder:
-  `open -a NovelBang --env NOVELBANG_WORKSPACE=~/Writing`)
+- asks where your novels should live on first launch (`~/Novels` is suggested). Any folder
+  works, including one in iCloud Drive or Dropbox. **Change…** next to the folder on the
+  home screen switches folders later. If you pick a single novel's folder by mistake, the
+  app uses the folder that contains it.
 - starts Ollama if the co-writer is set to Ollama and it isn't already running, and
   stops it again on quit (an Ollama that was already running is left alone)
 - saves any unsaved text before the window closes or the app quits

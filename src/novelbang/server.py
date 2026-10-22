@@ -156,6 +156,7 @@ def create_app(
     # Only answer requests addressed to this machine (blocks DNS-rebinding from websites).
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "::1", *extra_hosts])
     ws = Workspace(workspace_dir, on_change=lambda p: tracker.touched(p.root))
+    app.state.workspace = ws  # the desktop app switches folders through this
     settings = LLMSettings.load(settings_path)
 
     @app.exception_handler(ProjectError)

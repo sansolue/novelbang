@@ -559,6 +559,12 @@ class Workspace:
         self._locks: dict[str, threading.Lock] = {}
         self._locks_guard = threading.Lock()
 
+    def move_to(self, root: Path) -> None:
+        """Switch to another folder of novels. Edits already under way finish in the old one."""
+        root.mkdir(parents=True, exist_ok=True)
+        with self._locks_guard:
+            self.root = root
+
     @contextmanager
     def edit(self, project_id: str) -> Iterator[Project]:
         """Load a project for a change, serialising writers so load→modify→save can't interleave."""

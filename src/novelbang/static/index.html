@@ -13,7 +13,8 @@
 <section id="home" hidden>
   <header class="home-head">
     <h1>NovelBang</h1>
-    <p class="muted">Your novels, as plain files in <code id="ws-path"></code></p>
+    <p class="muted">Your novels, as plain files in <code id="ws-path"></code>
+      <button class="ghost small" id="ws-change" data-action="change-workspace" hidden>Change…</button></p>
     <button class="ghost" data-action="settings">Model settings</button>
   </header>
   <div id="project-grid" class="project-grid"></div>
@@ -190,6 +191,16 @@
     <h3 id="ask-title"></h3>
     <div id="ask-fields"></div>
     <menu><button value="cancel" formnovalidate>Cancel</button><button class="primary" value="ok">OK</button></menu>
+  </form>
+</dialog>
+
+<dialog id="workspace-dialog">
+  <form method="dialog">
+    <h3>Where should your novels live?</h3>
+    <p>Each novel is a folder of plain text files inside this folder. A folder that's
+      backed up or synced (iCloud Drive, Dropbox, a git repository) keeps them safe.</p>
+    <p class="muted"><code id="ws-suggested"></code><br><span id="ws-count"></span></p>
+    <menu><button value="choose">Choose another folder…</button><button class="primary" value="keep">Use this folder</button></menu>
   </form>
 </dialog>
 

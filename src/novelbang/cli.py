@@ -9,8 +9,8 @@ import uvicorn
 def main() -> None:
     parser = argparse.ArgumentParser(prog="novelbang", description="Local novel writing studio")
     parser.add_argument(
-        "workspace", nargs="?", default=str(Path.home() / "Novels"),
-        help="folder that holds your novel projects (default: ~/Novels)",
+        "workspace", nargs="?",
+        help="folder that holds your novel projects (default: the one chosen in the desktop app, else ~/Novels)",
     )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
@@ -21,9 +21,10 @@ def main() -> None:
     parser.add_argument("--no-browser", action="store_true", help="don't open a browser tab")
     args = parser.parse_args()
 
+    from .config import default_workspace
     from .server import create_app
 
-    workspace = Path(args.workspace).expanduser().resolve()
+    workspace = (Path(args.workspace) if args.workspace else default_workspace()).expanduser().resolve()
     # Never allow any Host header: that would re-open DNS rebinding on an app with
     # no authentication. A wildcard bind address isn't a name clients use, so
     # remote access needs the real name passed with --allow-host.

@@ -7,6 +7,8 @@ const enc = encodeURIComponent;
 const state = {
   project: null,        // project summary from the server
   view: null,           // {type: "chapter"|"note"|"book", id}
+  home: null,           // the project library, while it's shown
+  wsAsked: false,       // desktop app: asked about the workspace folder this session
   dirty: false,
   saveTimer: null,
   metaTimer: null,
@@ -129,6 +131,8 @@ async function showHome() {
   document.title = "NovelBang";
   const data = await api("GET", "/api/projects");
   $("#ws-path").textContent = data.workspace;
+  state.home = data;
+  desktopHome();
   const grid = $("#project-grid");
   grid.replaceChildren(
     ...data.projects.map((p) =>
@@ -143,6 +147,43 @@ async function showHome() {
       el("strong", {}, "New novel"),
       el("span", {}, "Start a project"))
   );
+}
+
+// ---------------------------------------------------------------- workspace (desktop app)
+
+// The desktop app's Python side, once pywebview has injected it (it may arrive after the page loads).
+const desktop = () => window.pywebview?.api;
+
+function desktopHome() {
+  if ($("#home").hidden || !state.home || !desktop()?.choose_workspace) return;
+  $("#ws-change").hidden = false;
+  if (!state.wsAsked) {
+    state.wsAsked = true;
+    desktop().workspace_setup_needed().then((needed) => needed && setupWorkspace());
+  }
+}
+
+// First launch: keep the suggested folder or pick another.
+async function setupWorkspace() {
+  const dlg = $("#workspace-dialog");
+  const n = state.home.projects.length;
+  $("#ws-suggested").textContent = state.home.workspace;
+  $("#ws-count").textContent = n ? `It already holds ${n} novel${n === 1 ? "" : "s"}.` : "It's empty for now.";
+  dlg.showModal();
+  await new Promise((resolve) => dlg.addEventListener("close", resolve, { once: true }));
+  if (dlg.returnValue === "keep") await desktop().keep_workspace();
+  else if (dlg.returnValue === "choose" && !(await changeWorkspace())) setupWorkspace(); // picker cancelled
+  // Escape leaves it undecided, so the question comes back next launch.
+}
+
+async function changeWorkspace() {
+  const r = await desktop().choose_workspace();
+  if (!r) return null;
+  if (r.error) { toast(r.error, true); return null; }
+  if (r.note) toast(r.note);
+  if (location.hash) location.hash = "";
+  else await showHome();
+  return r;
 }
 
 async function newProject() {
@@ -1129,6 +1170,7 @@ function wire() {
       localStorage.setItem("nb-no-ai", document.body.classList.contains("no-ai") ? "1" : "");
     },
     preview: togglePreview,
+    "change-workspace": () => changeWorkspace().catch((e) => toast(e.message, true)),
     "reveal-exports": () => window.pywebview.api.reveal_exports(state.project.id),
     "new-chapter": newChapter,
     "new-note": newNote,
@@ -1233,6 +1275,7 @@ function wire() {
       fetch(url, { method: "PUT", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: $("#doc-text").value }) });
     }
   });
+  window.addEventListener("pywebviewready", desktopHome);
   window.addEventListener("hashchange", () => route().catch((e) => toast(e.message, true)));
   setupDragAndDrop();
   if (localStorage.getItem("nb-no-ai")) document.body.classList.add("no-ai");

@@ -16,11 +16,14 @@ import sys
 import threading
 import time
 import urllib.request
+from contextlib import suppress
 from pathlib import Path
 
 import uvicorn
 
+from .config import default_workspace, save_workspace, saved_workspace
 from .llm import LLMSettings, config_dir
+from .project import Project, Workspace
 from .server import create_app
 
 log = logging.getLogger("novelbang")
@@ -103,17 +106,55 @@ def reveal(path: Path) -> None:
 
 
 class DesktopAPI:
-    """Called from the page as window.pywebview.api.*"""
+    """Called from the page as window.pywebview.api.* (only public methods are exposed)."""
 
-    def __init__(self, workspace: Path):
-        self._workspace = workspace
+    def __init__(self, workspace: Workspace, first_run: bool):
+        self._ws = workspace
+        self._first_run = first_run  # no folder chosen yet: the page asks where novels should live
+        self._window = None  # set once the window exists
 
     def reveal_exports(self, project_id: str) -> bool:
-        folder = (self._workspace / project_id / "exports").resolve()
-        if folder.parent.parent != self._workspace or not folder.is_dir():
+        root = self._ws.root.resolve()
+        folder = (root / project_id / "exports").resolve()
+        if folder.parent.parent != root or not folder.is_dir():
             return False
         reveal(folder)
         return True
+
+    def workspace_setup_needed(self) -> bool:
+        return self._first_run
+
+    def keep_workspace(self) -> str:
+        """Settle on the current folder (the first-run default)."""
+        save_workspace(self._ws.root)
+        self._first_run = False
+        return str(self._ws.root)
+
+    def choose_workspace(self) -> dict | None:
+        """Pick the folder of novels with the system folder dialog; None if cancelled."""
+        import webview
+
+        picked = self._window.create_file_dialog(webview.FileDialog.FOLDER, directory=str(self._ws.root))
+        if not picked:
+            return None
+        return self._use(Path(picked[0] if isinstance(picked, (list, tuple)) else picked))
+
+    def _use(self, path: Path) -> dict:
+        path, note = path.resolve(), ""
+        if Project.is_project(path):
+            # An easy slip: picking one novel's folder rather than the folder of novels.
+            note = f"“{path.name}” is a novel, so NovelBang uses the folder it's in: {path.parent}"
+            path = path.parent
+        if not os.access(path, os.W_OK):
+            return {"error": f"NovelBang can't write to {path}. Choose a folder of your own."}
+        old = self._ws.root
+        self._ws.move_to(path)
+        save_workspace(path)
+        if self._first_run and old.resolve() != path:
+            with suppress(OSError):
+                old.rmdir()  # the default folder made before setup, if it's still empty
+        self._first_run = False
+        return {"workspace": str(path), "note": note}
 
 
 def save_on_close(window) -> None:
@@ -152,15 +193,16 @@ def main() -> None:
     import webview
 
     setup_logging()
-    workspace = Path(os.environ.get("NOVELBANG_WORKSPACE") or Path.home() / "Novels").expanduser().resolve()
+    workspace = default_workspace().expanduser().resolve()
+    first_run = not os.environ.get("NOVELBANG_WORKSPACE") and saved_workspace() is None
     port = free_port(PORT)
     url = f"http://127.0.0.1:{port}"
     log.info("Starting NovelBang %s on %s with workspace %s", sys.version.split()[0], url, workspace)
 
     ollama = start_ollama()
-    server = uvicorn.Server(
-        uvicorn.Config(create_app(workspace), host="127.0.0.1", port=port, log_level="warning", log_config=None)
-    )
+    app = create_app(workspace)
+    api = DesktopAPI(app.state.workspace, first_run)
+    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning", log_config=None))
     thread = threading.Thread(target=server.run, name="server", daemon=True)
     thread.start()
     while not server.started and thread.is_alive():
@@ -168,10 +210,11 @@ def main() -> None:
 
     webview.settings["ALLOW_DOWNLOADS"] = True  # export files are saved with a Save dialog
     window = webview.create_window(
-        "NovelBang", url, js_api=DesktopAPI(workspace), width=1400, height=900, min_size=(900, 600),
+        "NovelBang", url, js_api=api, width=1400, height=900, min_size=(900, 600),
         text_select=True,
     )
 
+    api._window = window
     save_on_close(window)
     webview.start(private_mode=False, storage_path=str(config_dir() / "webview"))
 
