@@ -62,11 +62,11 @@ for the installer. The app:
 
 To run it from source without building: `uv run --extra desktop novelbang-desktop`.
 
-The Mac build is for the chip of the Mac that builds it (`arm64` or `x86_64`). It's
-ad-hoc signed, so it opens on the Mac that built it. On any other Mac, macOS blocks it
-as coming from an unidentified developer. To share it, sign it with an Apple Developer
-ID and notarize it. Until then, others can allow it once under **System Settings →
-Privacy & Security → Open Anyway**.
+The Mac build is for the chip of the Mac that builds it (`arm64` or `x86_64`). Unless
+it's signed (see [Signing the Mac app](#signing-the-mac-app)), it's ad-hoc signed, so it
+opens on the Mac that built it. On any other Mac, macOS blocks it as coming from an
+unidentified developer, and others can allow it once under **System Settings → Privacy &
+Security → Open Anyway**.
 
 The Windows build is x64; Windows on ARM runs it under emulation. It isn't code-signed,
 so SmartScreen warns on first run (**More info → Run anyway**). It uses the Microsoft
@@ -88,6 +88,39 @@ starts, and that the Windows installer installs an app that starts and then unin
 cleanly. Finally it creates a GitHub Release with the DMGs, the Windows installer and
 the portable zip, plus notes generated from the commits. Tags such as `v0.3.0rc1` are marked as prereleases. **Actions → Release →
 Run workflow** runs the same build without releasing, to try the pipeline.
+
+### Signing the Mac app
+
+A Mac app that opens without warnings on any Mac is signed with a Developer ID and
+notarized by Apple. That needs a paid [Apple Developer Program](https://developer.apple.com/programs/)
+membership. The app runs under the hardened runtime and needs no exceptions to it.
+
+To sign a local build, put the Developer ID Application certificate in your login keychain
+and name it:
+
+```sh
+MACOS_SIGN_IDENTITY="Developer ID Application: SanSolue (TEAMID)" packaging/build-macos.sh
+```
+
+To notarize it as well, save your Apple credentials once with
+`xcrun notarytool store-credentials novelbang` and add `NOTARY_PROFILE=novelbang`. The
+build then sends the DMG to Apple, waits for it to be accepted (usually a few minutes),
+and staples the ticket to it. `security find-identity -v -p codesigning` lists the
+identities you have.
+
+The release workflow signs and notarizes when these repository secrets are set
+(**Settings → Secrets and variables → Actions**). Without them it builds unsigned, as before:
+
+| Secret | What it is |
+| --- | --- |
+| `MACOS_CERTIFICATE` | The Developer ID Application certificate and its private key, as a `.p12` file, base64-encoded: in Keychain Access, right-click the certificate → **Export** (`.p12`), then `base64 -i cert.p12 \| pbcopy` |
+| `MACOS_CERTIFICATE_PASSWORD` | The password you gave the `.p12` |
+| `APPLE_API_KEY` | An App Store Connect API key for notarizing: the contents of the `AuthKey_<id>.p8` file. Create it under [Users and Access → Integrations → App Store Connect API](https://appstoreconnect.apple.com/access/integrations/api) with the **Developer** role |
+| `APPLE_API_KEY_ID` | That key's ID |
+| `APPLE_API_ISSUER` | The Issuer ID shown above the list of keys |
+
+If the certificate is set, all five are required. The certificate goes into a temporary
+keychain that is deleted at the end of the job.
 
 ## Project layout
 
