@@ -79,7 +79,8 @@ def test_keeping_the_default_and_unwritable_folders(tmp_path):
     ws = Workspace(tmp_path / "Novels")
     Workspace(ws.root).create("Kept")
     api = desktop.DesktopAPI(ws, first_run=True)
-    if os.geteuid() != 0:
+    # chmod can't make a folder read-only on Windows, and root can write anywhere.
+    if os.name != "nt" and os.geteuid() != 0:
         locked = tmp_path / "locked"
         locked.mkdir()
         locked.chmod(0o500)

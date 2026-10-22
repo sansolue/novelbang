@@ -24,6 +24,7 @@ import uvicorn
 from .config import default_workspace, save_workspace, saved_workspace
 from .llm import LLMSettings, config_dir
 from .logs import log_dir, log_path, setup_logging
+from .procs import NO_CONSOLE
 from .project import Project, Workspace
 from .server import create_app
 
@@ -32,15 +33,20 @@ log = logging.getLogger("novelbang")
 # A fixed port keeps the page's origin, and so its localStorage, the same between launches.
 PORT = 47865
 OLLAMA_URL = "http://localhost:11434"
-# Apps started from Finder don't get the shell's PATH.
-EXTRA_PATHS = ["/opt/homebrew/bin", "/usr/local/bin", "/Applications/Ollama.app/Contents/Resources"]
+# Where Ollama installs, which an app started from Finder or the Start menu may not have on its PATH.
+if sys.platform == "win32":
+    EXTRA_PATHS = [str(Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Ollama")]
+else:
+    EXTRA_PATHS = ["/opt/homebrew/bin", "/usr/local/bin", "/Applications/Ollama.app/Contents/Resources"]
 
 
 def free_port(preferred: int) -> int:
     for port in (preferred, 0):
         with socket.socket() as s:
-            # As uvicorn does, so connections left from the last run (TIME_WAIT) don't block the port.
-            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            if sys.platform != "win32":
+                # As uvicorn does, so connections left from the last run (TIME_WAIT) don't block the port.
+                # (On Windows it would also let us bind over another program's listener.)
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             try:
                 s.bind(("127.0.0.1", port))
             except OSError:
@@ -72,7 +78,11 @@ def start_ollama() -> subprocess.Popen | None:
         return None
     log.info("Starting %s serve (its output: %s)", ollama, log_dir() / "ollama.log")
     with open(log_dir() / "ollama.log", "a") as out:
-        proc = subprocess.Popen([ollama, "serve"], stdout=out, stderr=subprocess.STDOUT, start_new_session=True)
+        detach = (
+            {"creationflags": NO_CONSOLE | subprocess.CREATE_NEW_PROCESS_GROUP}
+            if sys.platform == "win32" else {"start_new_session": True}
+        )
+        proc = subprocess.Popen([ollama, "serve"], stdout=out, stderr=subprocess.STDOUT, **detach)
     for _ in range(20):
         if reachable(f"{OLLAMA_URL}/api/version"):
             break

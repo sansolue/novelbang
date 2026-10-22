@@ -22,6 +22,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from .procs import NO_CONSOLE
 from .project import ProjectError, count_words
 
 GIT_DIR = ".novelbang/history.git"
@@ -83,7 +84,8 @@ class ProjectHistory:
         if not git_available():
             raise HistoryError("Version history needs git installed (https://git-scm.com).")
         r = subprocess.run(
-            ["git", *args], cwd=self.root, env=self._env(), input=input, capture_output=True
+            ["git", *args], cwd=self.root, env=self._env(), input=input, capture_output=True,
+            creationflags=NO_CONSOLE,
         )
         if check and r.returncode != 0:
             raise HistoryError(f"git {args[0]} failed: {r.stderr.decode(errors='replace').strip()}")
@@ -95,11 +97,11 @@ class ProjectHistory:
         meta = self.root / ".novelbang"
         meta.mkdir(exist_ok=True)
         # Keep .novelbang/ out of the author's own git repo, if they have one.
-        (meta / ".gitignore").write_text("*\n", "utf-8")
+        (meta / ".gitignore").write_text("*\n", "utf-8", newline="\n")
         self._git("init", "-q")
         self._git("config", "core.quotepath", "false")
         (self.git_dir / "info").mkdir(exist_ok=True)
-        (self.git_dir / "info" / "exclude").write_text(EXCLUDES, "utf-8")
+        (self.git_dir / "info" / "exclude").write_text(EXCLUDES, "utf-8", newline="\n")
 
     def _has_commits(self) -> bool:
         return self._git("rev-parse", "-q", "--verify", "HEAD", check=False).returncode == 0

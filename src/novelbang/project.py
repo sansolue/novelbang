@@ -252,8 +252,8 @@ class Project:
         for sub in ("chapters", "notes", "assets", "exports"):
             (root / sub).mkdir(parents=True)
         for name, body in DEFAULT_NOTES.items():
-            (root / "notes" / name).write_text(body, "utf-8")
-        (root / ".gitignore").write_text("exports/\ntrash/\n", "utf-8")
+            (root / "notes" / name).write_text(body, "utf-8", newline="\n")
+        (root / ".gitignore").write_text("exports/\ntrash/\n", "utf-8", newline="\n")
         project = cls(root, Metadata(title=title or "Untitled", author=author), [])
         project.add_chapter("Chapter One")
         return project
@@ -338,7 +338,7 @@ class Project:
         meta = self.root / META_DIR
         meta.mkdir(exist_ok=True)
         if not (meta / ".gitignore").exists():
-            (meta / ".gitignore").write_text("*\n", "utf-8")
+            (meta / ".gitignore").write_text("*\n", "utf-8", newline="\n")
         _atomic_write(self._synopsis_path(), json.dumps(data, indent=1))
 
     def synopsis_state(self, chapter: Chapter, text: str, fingerprints: dict[str, dict] | None = None) -> str:
@@ -604,7 +604,8 @@ def _atomic_write(path: Path, text: str) -> None:
     tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666)  # usual umask-based mode
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
+        # "\n" on every OS, so a folder shared between a Mac and a PC doesn't flip line endings.
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
             f.write(text)
         os.replace(tmp, path)
     except BaseException:

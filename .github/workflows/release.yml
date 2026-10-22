@@ -1,4 +1,4 @@
-# Pushing a version tag builds the Mac app and publishes a GitHub Release:
+# Pushing a version tag builds the Mac and Windows apps and publishes a GitHub Release:
 #   (bump version in pyproject.toml, commit)  git tag v0.2.0 && git push origin v0.2.0
 # Running it by hand (Actions → Release → Run workflow) builds without releasing.
 name: Release
@@ -13,12 +13,28 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        runner: [ubuntu-latest, windows-2025]
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@18d369b23da25a81e9458561248e1aafff6a70fa  # v10.3.1
         with:
           enable-cache: true
+
+      - name: Check the tag matches pyproject.toml
+        if: github.ref_type == 'tag' && runner.os == 'Linux'
+        run: |
+          version=$(uv run --no-project python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
+          if [[ "$GITHUB_REF_NAME" != "v$version" ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME doesn't match version $version in pyproject.toml (expected v$version)"
+            exit 1
+          fi
+
       - run: uv run pytest -q
 
   build-macos:
@@ -32,15 +48,6 @@ jobs:
       - uses: astral-sh/setup-uv@18d369b23da25a81e9458561248e1aafff6a70fa  # v10.3.1
         with:
           enable-cache: true
-
-      - name: Check the tag matches pyproject.toml
-        if: github.ref_type == 'tag'
-        run: |
-          version=$(uv run --no-project python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
-          if [[ "$GITHUB_REF_NAME" != "v$version" ]]; then
-            echo "::error::Tag $GITHUB_REF_NAME doesn't match version $version in pyproject.toml (expected v$version)"
-            exit 1
-          fi
 
       - run: packaging/build-macos.sh
 
@@ -68,8 +75,59 @@ jobs:
           path: dist/*.dmg
           if-no-files-found: error
 
+  build-windows:
+    needs: test
+    runs-on: windows-2025  # has Inno Setup 6
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@18d369b23da25a81e9458561248e1aafff6a70fa  # v10.3.1
+        with:
+          enable-cache: true
+
+      - run: packaging/build-windows.ps1
+
+      - name: Check the installer installs an app that starts
+        env:
+          NOVELBANG_WORKSPACE: ${{ runner.temp }}\novels
+          NOVELBANG_LOG_DIR: ${{ runner.temp }}\logs
+          NOVELBANG_NO_OLLAMA: "1"
+        run: |
+          $installer = (Get-Item dist\*-x64-setup.exe).FullName
+          $setup = Start-Process $installer -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CURRENTUSER" -Wait -PassThru
+          if ($setup.ExitCode) { throw "The installer failed with exit code $($setup.ExitCode)" }
+          $exe = Join-Path $env:LOCALAPPDATA "Programs\NovelBang\NovelBang.exe"
+          if (-not (Test-Path $exe)) { throw "NovelBang.exe isn't where the installer should put it: $exe" }
+
+          $app = Start-Process $exe -PassThru
+          $up = $false
+          foreach ($i in 1..60) {
+            try {
+              Invoke-WebRequest http://127.0.0.1:47865/static/app.js -UseBasicParsing -TimeoutSec 2 | Out-Null
+              $up = $true
+              break
+            } catch { Start-Sleep 1 }
+          }
+          Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
+          Get-Content "$env:NOVELBANG_LOG_DIR\novelbang.log" -ErrorAction SilentlyContinue
+          if (-not $up) { throw "The installed app didn't start" }
+
+          $uninstaller = Join-Path (Split-Path $exe) "unins000.exe"
+          Start-Process $uninstaller -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES" -Wait
+          if (Test-Path $exe) { throw "The uninstaller left NovelBang.exe behind" }
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows-${{ runner.arch }}
+          path: |
+            dist/*-setup.exe
+            dist/*-portable.zip
+          if-no-files-found: error
+
   release:
-    needs: build-macos
+    needs: [build-macos, build-windows]
     if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     permissions:
@@ -77,7 +135,6 @@ jobs:
     steps:
       - uses: actions/download-artifact@v8
         with:
-          pattern: macos-*
           path: dist
           merge-multiple: true
 
@@ -97,6 +154,16 @@ jobs:
 
           The app isn't signed with an Apple Developer ID yet, so macOS blocks it the first
           time. Open it once from **System Settings → Privacy & Security → Open Anyway**.
+
+          ## Install (Windows 10 and 11, x64)
+
+          Download **NovelBang-…-x64-setup.exe** and run it. It installs for your account
+          only, with no admin rights needed, and adds NovelBang to the Start menu. Or use the
+          **portable .zip**: unzip it anywhere and run `NovelBang.exe`.
+
+          The installer isn't code-signed yet, so Windows SmartScreen may say "Windows
+          protected your PC". Choose **More info → Run anyway**. NovelBang uses the Microsoft
+          Edge WebView2 Runtime, which comes with Windows 11 and up-to-date Windows 10.
           EOF
-          gh release create "$GITHUB_REF_NAME" dist/*.dmg "${prerelease[@]}" \
+          gh release create "$GITHUB_REF_NAME" dist/*.dmg dist/*-setup.exe dist/*-portable.zip "${prerelease[@]}" \
             --verify-tag --title "NovelBang ${GITHUB_REF_NAME#v}" --generate-notes --notes "$notes"

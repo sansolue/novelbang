@@ -1,4 +1,6 @@
-# PyInstaller spec for the NovelBang desktop app. Build with packaging/build-macos.sh.
+# PyInstaller spec for the NovelBang desktop app.
+# Build with packaging/build-macos.sh or packaging/build-windows.ps1.
+import sys
 import tomllib
 from pathlib import Path
 
@@ -19,21 +21,23 @@ pyz = PYZ(a.pure)
 exe = EXE(
     pyz, a.scripts, [], exclude_binaries=True, name="NovelBang",
     console=False, argv_emulation=False, target_arch=None,
+    icon=str(ROOT / "packaging" / "icon.png"),  # converted to .ico on Windows (needs Pillow)
 )
 coll = COLLECT(exe, a.binaries, a.datas, name="NovelBang")
-app = BUNDLE(
-    coll,
-    name="NovelBang.app",
-    icon=str(ROOT / "packaging" / "icon.png"),
-    bundle_identifier="com.sansolue.novelbang",
-    version=VERSION,
-    info_plist={
-        "CFBundleDisplayName": "NovelBang",
-        "CFBundleShortVersionString": VERSION,
-        "CFBundleVersion": VERSION,
-        "LSApplicationCategoryType": "public.app-category.productivity",
-        "LSMinimumSystemVersion": "12.0",
-        "NSHighResolutionCapable": True,
-        "NSHumanReadableCopyright": "© SanSolue",
-    },
-)
+if sys.platform == "darwin":
+    app = BUNDLE(
+        coll,
+        name="NovelBang.app",
+        icon=str(ROOT / "packaging" / "icon.png"),
+        bundle_identifier="com.sansolue.novelbang",
+        version=VERSION,
+        info_plist={
+            "CFBundleDisplayName": "NovelBang",
+            "CFBundleShortVersionString": VERSION,
+            "CFBundleVersion": VERSION,
+            "LSApplicationCategoryType": "public.app-category.productivity",
+            "LSMinimumSystemVersion": "12.0",
+            "NSHighResolutionCapable": True,
+            "NSHumanReadableCopyright": "© SanSolue",
+        },
+    )

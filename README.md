@@ -33,16 +33,21 @@ your arguments (`--port`, `--host`, `--no-browser`).
 
 Then open **Settings**, pick your server preset, click **Detect**, choose a model.
 
-## Desktop app (macOS)
+## Desktop app (macOS and Windows)
 
-NovelBang also runs as a normal Mac app, in its own window, with no browser and no
-terminal. It runs the same server as `start.sh` behind a native window.
+NovelBang also runs as a normal app on macOS and Windows, in its own window, with no
+browser and no terminal. It runs the same server as `start.sh` behind a native window.
+Ready-built versions are on the [releases page](https://github.com/sansolue/novelbang/releases).
 
 ```sh
-packaging/build-macos.sh      # → dist/NovelBang.app and dist/NovelBang-<version>-<arch>.dmg
+packaging/build-macos.sh            # → dist/NovelBang.app and dist/NovelBang-<version>-<arch>.dmg
+pwsh packaging\build-windows.ps1    # → dist\NovelBang-<version>-x64-setup.exe and a portable .zip
 ```
 
-Open the `.dmg` and drag NovelBang into Applications. The app:
+On a Mac, open the `.dmg` and drag NovelBang into Applications. On Windows, run the
+installer: it installs for your account only, with no admin rights needed, and adds
+NovelBang to the Start menu. The Windows build needs [Inno Setup 6](https://jrsoftware.org/isinfo.php)
+for the installer. The app:
 
 - asks where your novels should live on first launch (`~/Novels` is suggested). Any folder
   works, including one in iCloud Drive or Dropbox. **Change…** next to the folder on the
@@ -51,16 +56,21 @@ Open the `.dmg` and drag NovelBang into Applications. The app:
 - starts Ollama if the co-writer is set to Ollama and it isn't already running, and
   stops it again on quit (an Ollama that was already running is left alone)
 - saves any unsaved text before the window closes or the app quits
-- saves exports through a Save dialog; **Show in Finder** in Publish opens the exports folder
+- saves exports through a Save dialog; **Show in Finder** (**Open folder** on Windows) in
+  Publish opens the exports folder
 - writes a log for debugging (see [Logs](#logs))
 
 To run it from source without building: `uv run --extra desktop novelbang-desktop`.
 
-The build only runs on the Mac you build it on, for that Mac's chip (`arm64` or
-`x86_64`). It's ad-hoc signed, so it opens on the Mac that built it. On any other Mac,
-macOS blocks it as coming from an unidentified developer. To share it, sign it with an
-Apple Developer ID and notarize it. Until then, others can allow it once under
-**System Settings → Privacy & Security → Open Anyway**.
+The Mac build is for the chip of the Mac that builds it (`arm64` or `x86_64`). It's
+ad-hoc signed, so it opens on the Mac that built it. On any other Mac, macOS blocks it
+as coming from an unidentified developer. To share it, sign it with an Apple Developer
+ID and notarize it. Until then, others can allow it once under **System Settings →
+Privacy & Security → Open Anyway**.
+
+The Windows build is x64; Windows on ARM runs it under emulation. It isn't code-signed,
+so SmartScreen warns on first run (**More info → Run anyway**). It uses the Microsoft
+Edge WebView2 Runtime, which comes with Windows 11 and up-to-date Windows 10.
 
 ### Releasing
 
@@ -71,10 +81,12 @@ Pushing a version tag builds the app on GitHub and publishes a release:
 git tag v0.2.0 && git push origin v0.2.0
 ```
 
-`.github/workflows/release.yml` runs the tests, then builds on Apple silicon and Intel
-runners. It checks that the tag matches the version in `pyproject.toml`, confirms the
-built app starts, and creates a GitHub Release with both DMGs and notes generated from
-the commits. Tags such as `v0.3.0rc1` are marked as prereleases. **Actions → Release →
+`.github/workflows/release.yml` runs the tests on Linux and Windows and checks that the
+tag matches the version in `pyproject.toml`. It then builds the Mac app on Apple silicon
+and Intel runners and the Windows app on a Windows runner. It confirms each Mac build
+starts, and that the Windows installer installs an app that starts and then uninstalls
+cleanly. Finally it creates a GitHub Release with the DMGs, the Windows installer and
+the portable zip, plus notes generated from the commits. Tags such as `v0.3.0rc1` are marked as prereleases. **Actions → Release →
 Run workflow** runs the same build without releasing, to try the pipeline.
 
 ## Project layout
