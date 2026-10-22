@@ -1088,6 +1088,10 @@ async function renderPublish() {
       : [el("li", { class: "muted" }, "Nothing exported yet.")])
   );
   $("#exports-dir").textContent = info.exports_dir;
+  // Only the desktop app (window.pywebview) can open a folder on this machine.
+  const reveal = $("#reveal-exports");
+  reveal.hidden = !window.pywebview?.api?.reveal_exports || !info.exports.length;
+  reveal.textContent = navigator.userAgent.includes("Mac") ? "Show in Finder" : "Open folder";
 }
 
 async function doExport(fmt, btn) {
@@ -1125,6 +1129,7 @@ function wire() {
       localStorage.setItem("nb-no-ai", document.body.classList.contains("no-ai") ? "1" : "");
     },
     preview: togglePreview,
+    "reveal-exports": () => window.pywebview.api.reveal_exports(state.project.id),
     "new-chapter": newChapter,
     "new-note": newNote,
     "delete-doc": deleteDoc,

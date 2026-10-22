@@ -14,10 +14,20 @@ dependencies = [
 
 [project.scripts]
 novelbang = "novelbang.cli:main"
+novelbang-desktop = "novelbang.desktop:main"
+
+[project.optional-dependencies]
+desktop = [
+    "pywebview>=6.2.1",
+]
 
 [build-system]
 requires = ["uv_build>=0.8,<0.10"]
 build-backend = "uv_build"
 
 [dependency-groups]
+build = [
+    "pillow>=13.0.0",
+    "pyinstaller>=6.22.3",
+]
 dev = ["pytest>=8"]

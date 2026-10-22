@@ -30,6 +30,33 @@ your arguments (`--port`, `--host`, `--no-browser`).
 
 Then open **Settings**, pick your server preset, click **Detect**, choose a model.
 
+## Desktop app (macOS)
+
+NovelBang also runs as a normal Mac app, in its own window, with no browser and no
+terminal. It runs the same server as `start.sh` behind a native window.
+
+```sh
+packaging/build-macos.sh      # → dist/NovelBang.app and dist/NovelBang-<version>-<arch>.dmg
+```
+
+Open the `.dmg` and drag NovelBang into Applications. The app:
+
+- keeps your novels in `~/Novels` (set `NOVELBANG_WORKSPACE` to use another folder:
+  `open -a NovelBang --env NOVELBANG_WORKSPACE=~/Writing`)
+- starts Ollama if the co-writer is set to Ollama and it isn't already running, and
+  stops it again on quit (an Ollama that was already running is left alone)
+- saves any unsaved text before the window closes or the app quits
+- saves exports through a Save dialog; **Show in Finder** in Publish opens the exports folder
+- writes its log to `~/Library/Logs/NovelBang/novelbang.log`
+
+To run it from source without building: `uv run --extra desktop novelbang-desktop`.
+
+The build only runs on the Mac you build it on, for that Mac's chip (`arm64` or
+`x86_64`). It's ad-hoc signed, so it opens on the Mac that built it. On any other Mac,
+macOS blocks it as coming from an unidentified developer. To share it, sign it with an
+Apple Developer ID and notarize it. Until then, others can allow it once under
+**System Settings → Privacy & Security → Open Anyway**.
+
 ## Project layout
 
 ```
@@ -149,6 +176,8 @@ uv run novelbang /tmp/ws --no-browser --port 8765
 - `src/novelbang/history.py` — version history (private git repo per project) and word diff
 - `src/novelbang/export/` — EPUB and web exporters (pure Python, no pandoc)
 - `src/novelbang/server.py` — FastAPI JSON API; `static/` — the UI (no build step)
+- `src/novelbang/desktop.py` — the desktop app (pywebview window around the server);
+  `packaging/` — PyInstaller spec, build script and icon (`make_icon.py` draws it)
 
 The server binds to `127.0.0.1` and rejects requests with a foreign `Host` header.
 To reach it from another machine, bind with `--host 0.0.0.0` and name the host clients
