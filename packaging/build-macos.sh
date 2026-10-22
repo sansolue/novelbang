@@ -17,5 +17,11 @@ trap 'rm -rf "$staging"' EXIT
 cp -R dist/NovelBang.app "$staging/"
 ln -s /Applications "$staging/Applications"
 rm -f "$dmg"
-hdiutil create -quiet -volname NovelBang -srcfolder "$staging" -fs HFS+ -format UDZO "$dmg"
+# hdiutil now and then fails with "Resource busy" (often on CI machines); a retry clears it.
+for attempt in 1 2 3 4 5; do
+  hdiutil create -quiet -volname NovelBang -srcfolder "$staging" -fs HFS+ -format UDZO "$dmg" && break
+  [[ $attempt == 5 ]] && exit 1
+  echo "hdiutil failed, retrying ($attempt)…" >&2
+  sleep $((attempt * 3))
+done
 echo "Built dist/NovelBang.app and $dmg"

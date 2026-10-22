@@ -62,6 +62,21 @@ macOS blocks it as coming from an unidentified developer. To share it, sign it w
 Apple Developer ID and notarize it. Until then, others can allow it once under
 **System Settings → Privacy & Security → Open Anyway**.
 
+### Releasing
+
+Pushing a version tag builds the app on GitHub and publishes a release:
+
+```sh
+# set version = "0.2.0" in pyproject.toml, commit, then:
+git tag v0.2.0 && git push origin v0.2.0
+```
+
+`.github/workflows/release.yml` runs the tests, then builds on Apple silicon and Intel
+runners. It checks that the tag matches the version in `pyproject.toml`, confirms the
+built app starts, and creates a GitHub Release with both DMGs and notes generated from
+the commits. Tags such as `v0.3.0rc1` are marked as prereleases. **Actions → Release →
+Run workflow** runs the same build without releasing, to try the pipeline.
+
 ## Project layout
 
 ```
