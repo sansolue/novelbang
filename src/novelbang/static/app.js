@@ -34,7 +34,24 @@ async function api(method, path, body) {
   return res.json();
 }
 
-function toast(msg, isError = false) {
+// Sends a problem to the server's log, so a bug report can include what the UI saw.
+// Capped per page load, so an error that repeats in a loop can't flood the log.
+const reported = { count: 0, last: "" };
+function reportError(message, stack = "", level = "error") {
+  message = String(message || "Unknown error");
+  if (reported.count >= 50 || message === reported.last) return;
+  reported.count++;
+  reported.last = message;
+  fetch("/api/client-log", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ level, message, stack: stack || "", where: location.hash }),
+  }).catch(() => {});
+}
+
+// `report: false` for AI errors: their message can quote the prompt (some model servers echo
+// the request), and the server has already logged a version that doesn't.
+function toast(msg, isError = false, report = isError) {
+  if (report) reportError(msg, "", "warning");
   const t = $("#toast");
   t.textContent = msg;
   t.className = "toast" + (isError ? " error" : "");
@@ -450,7 +467,7 @@ async function generateSynopses() {
     const r = rows.find((x) => x.status === "working");
     if (r) { r.status = ""; r.draft = null; }
     $("#syn-progress").textContent = e.name === "AbortError" ? "Stopped." : "";
-    if (e.name !== "AbortError") toast(e.message, true);
+    if (e.name !== "AbortError") toast(e.message, true, false);
   } finally {
     state.syn.running = false;
     state.ai.controller = null;
@@ -786,7 +803,7 @@ async function runWriteAction(action) {
       out.scrollTop = out.scrollHeight;
     }, () => { if (!state.ai.text) out.dataset.status = "Thinking…"; });
   } catch (e) {
-    if (e.name !== "AbortError") toast(e.message, true);
+    if (e.name !== "AbortError") toast(e.message, true, false);
   } finally {
     out.classList.remove("streaming");
     out.dataset.status = "";
@@ -1047,7 +1064,7 @@ async function sendChat(e) {
       $("#chat-log").scrollTop = $("#chat-log").scrollHeight;
     }, () => { if (!reply.content) replyNode.dataset.status = "Thinking…"; });
   } catch (err) {
-    if (err.name !== "AbortError") toast(err.message, true);
+    if (err.name !== "AbortError") toast(err.message, true, false);
     if (!reply.content) state.chat.splice(state.chat.indexOf(reply), 1);
   } finally {
     reply.streaming = false;
@@ -1074,6 +1091,13 @@ async function openSettings() {
   $("#model-status").textContent = "";
   $("#settings-dialog").showModal();
   detectModels(true);
+  api("GET", "/api/about").then((a) => {
+    $("#about-version").textContent = a.version;
+    $("#about-log").textContent = a.log;
+    $("#reveal-log").hidden = !desktop()?.reveal_log;
+    $("#reveal-log").textContent = navigator.userAgent.includes("Mac") ? "Show in Finder" : "Open folder";
+    $("#about").hidden = false;
+  }).catch(() => {});
 }
 
 async function detectModels(quiet = false) {
@@ -1170,6 +1194,7 @@ function wire() {
       localStorage.setItem("nb-no-ai", document.body.classList.contains("no-ai") ? "1" : "");
     },
     preview: togglePreview,
+    "reveal-log": () => desktop().reveal_log(),
     "change-workspace": () => changeWorkspace().catch((e) => toast(e.message, true)),
     "reveal-exports": () => window.pywebview.api.reveal_exports(state.project.id),
     "new-chapter": newChapter,
@@ -1276,6 +1301,9 @@ function wire() {
     }
   });
   window.addEventListener("pywebviewready", desktopHome);
+  window.addEventListener("error", (e) =>
+    reportError(e.message, `at ${e.filename}:${e.lineno}:${e.colno}\n${e.error?.stack || ""}`.trim()));
+  window.addEventListener("unhandledrejection", (e) => reportError(e.reason?.message || e.reason, e.reason?.stack));
   window.addEventListener("hashchange", () => route().catch((e) => toast(e.message, true)));
   setupDragAndDrop();
   if (localStorage.getItem("nb-no-ai")) document.body.classList.add("no-ai");

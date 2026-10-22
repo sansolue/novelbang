@@ -233,6 +233,11 @@
     <label class="check plain"><input name="thinking" type="checkbox"> Let reasoning models think first
       <span class="muted">(qwen3, deepseek-r1, gpt-oss… — slower, and thinking counts against max tokens)</span></label>
     <p class="muted small-label">Roughly 4 characters per token. Keep this below your model's context window (e.g. 12000 chars ≈ 3k tokens).</p>
+    <p class="muted small-label about" id="about" hidden>
+      NovelBang <span id="about-version"></span> · Log (for reporting problems; it never contains your writing):
+      <code id="about-log"></code>
+      <button type="button" class="ghost small" id="reveal-log" data-action="reveal-log" hidden>Show in Finder</button>
+    </p>
     <menu><button value="cancel" formnovalidate>Cancel</button><button class="primary" value="ok">Save</button></menu>
   </form>
 </dialog>

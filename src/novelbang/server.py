@@ -3,21 +3,27 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
+import traceback
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.exception_handlers import http_exception_handler, request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from . import prompts
+from . import __version__, prompts
 from .export import EXPORTERS
 from .export.render import BOOK_CSS, RenderedChapter, render_markdown
 from .history import HistoryTracker, ProjectHistory, git_available, word_diff
+from .logs import log_path, quotes_writing, without_writing
 from .llm import THINKING, LLMError, LLMSettings, list_models, stream_chat
 from .project import CHAPTER_KINDS, CHAPTER_STATUSES, Project, ProjectError, Workspace, check_filename
 
@@ -75,6 +81,13 @@ class Restore(BaseModel):
 class PreviewRequest(BaseModel):
     text: str
     file: str | None = None  # the chapter it belongs to, for its heading
+
+
+class ClientLog(BaseModel):
+    level: str = "error"
+    message: str
+    stack: str = ""
+    where: str = ""  # the page's URL hash: which view it happened in
 
 
 class AIRequest(BaseModel):
@@ -158,10 +171,40 @@ def create_app(
     ws = Workspace(workspace_dir, on_change=lambda p: tracker.touched(p.root))
     app.state.workspace = ws  # the desktop app switches folders through this
     settings = LLMSettings.load(settings_path)
+    log.info(
+        "Workspace %s; model server %s, model %s; version history %s",
+        workspace_dir, settings.base_url, settings.model or "(none)", "on" if git_available() else "off (no git)",
+    )
+
+    @app.middleware("http")
+    async def log_requests(request: Request, call_next):
+        start = time.perf_counter()
+        try:
+            response = await call_next(request)
+        except Exception:
+            # Bugs: keep the traceback, and tell the UI where to find it.
+            log.exception("%s %s crashed", request.method, request.url.path)
+            return JSONResponse({"detail": f"Something went wrong. Details are in the log: {log_path()}"}, 500)
+        log.debug("%s %s → %d in %.0f ms", request.method, request.url.path, response.status_code,
+                  (time.perf_counter() - start) * 1000)
+        return response
 
     @app.exception_handler(ProjectError)
-    async def project_error(_: Request, exc: ProjectError):
+    async def project_error(request: Request, exc: ProjectError):
+        log.warning("%s %s: %s", request.method, request.url.path, exc)
         return JSONResponse({"detail": str(exc)}, status_code=400)
+
+    @app.exception_handler(StarletteHTTPException)
+    async def http_error(request: Request, exc: StarletteHTTPException):
+        level = logging.INFO if exc.status_code == 404 else logging.WARNING
+        log.log(level, "%s %s → %d: %s", request.method, request.url.path, exc.status_code, exc.detail)
+        return await http_exception_handler(request, exc)
+
+    @app.exception_handler(RequestValidationError)
+    async def invalid_request(request: Request, exc: RequestValidationError):
+        problems = "; ".join(f"{'.'.join(map(str, e['loc']))}: {e['msg']}" for e in exc.errors())
+        log.warning("%s %s → 422: %s", request.method, request.url.path, problems)
+        return await request_validation_exception_handler(request, exc)
 
     def summary(p: Project) -> dict:
         stats = p.chapter_stats()
@@ -314,7 +357,9 @@ def create_app(
             raise HTTPException(413, "Picture is too large (50 MB max)")
         with ws.edit(pid) as p:
             # The browser's type wins over the file's extension (pasted screenshots are "image.png").
-            return {"src": p.add_image(data, Path(name).stem + ext)}
+            src = p.add_image(data, Path(name).stem + ext)
+        log.info("Picture added to %s: %s (%d KB)", pid, src.rsplit("/", 1)[-1], len(data) // 1024)
+        return {"src": src}
 
     @app.get("/api/projects/{pid}/assets/{path:path}")
     def get_asset(pid: str, path: str):
@@ -368,6 +413,7 @@ def create_app(
         if body.kind not in ("milestone", "checkpoint"):
             raise HTTPException(400, "kind must be milestone or checkpoint")
         version = snapshot(p, body.kind, body.message.strip(), allow_empty=body.kind == "milestone")
+        log.info("%s of %s: %s", body.kind.capitalize(), pid, version or "nothing to save")
         return {"version": version}
 
     @app.post("/api/projects/{pid}/history/restore")
@@ -386,6 +432,7 @@ def create_app(
             else:
                 p.write_note(body.name, old)
             snapshot(p, "restore", f"Restored {title} to {when}")
+            log.info("Restored %s/%s to version %s (%s)", pid, path, body.version[:10], when)
             return {"text": old, "project": summary(p)}
 
     # ---- export ------------------------------------------------------------
@@ -410,7 +457,10 @@ def create_app(
         if fmt not in EXPORTERS:
             raise HTTPException(404, f"Unknown format {fmt}")
         p = ws.get(pid)
+        start = time.perf_counter()
         out = EXPORTERS[fmt][2](p)
+        log.info("Exported %s as %s: %s (%d KB) in %.1f s", pid, fmt, out.name, out.stat().st_size // 1024,
+                 time.perf_counter() - start)
         return {"name": out.name, "path": str(out)}
 
     @app.get("/api/projects/{pid}/exports/{name}")
@@ -434,6 +484,11 @@ def create_app(
         except LLMError as e:
             raise HTTPException(400, str(e))
         settings.save(settings_path)
+        log.info(
+            "Settings saved: server %s, model %s, temperature %s, max tokens %s, context %s chars, thinking %s",
+            settings.base_url, settings.model or "(none)", settings.temperature, settings.max_tokens,
+            settings.context_chars, "on" if settings.thinking else "off",
+        )
         return settings.__dict__
 
     @app.post("/api/llm/models")
@@ -445,9 +500,11 @@ def create_app(
             probe.api_key = ""
         probe.update({"base_url": body.base_url, "api_key": body.api_key})
         try:
-            return {"models": await list_models(probe)}
+            found = await list_models(probe)
         except LLMError as e:
             raise HTTPException(502, str(e))
+        log.info("%d models at %s", len(found), probe.base_url)
+        return {"models": found}
 
     @app.post("/api/projects/{pid}/ai/{action}")
     async def ai(pid: str, action: str, body: AIRequest):
@@ -481,21 +538,70 @@ def create_app(
             case _:
                 raise HTTPException(404, f"Unknown action {action}")
 
+        # Sizes and timings only: prompts and replies are the author's writing.
+        prompt_chars = sum(len(m.get("content") or "") for m in msgs)
+        log.info("AI %s: model %s at %s, %d messages, %d prompt chars, max %s tokens",
+                 action, settings.model or "(none)", settings.base_url, len(msgs), prompt_chars,
+                 max_tokens or settings.max_tokens)
+
         async def ndjson():
+            start, first, outcome = time.perf_counter(), None, "stopped by the user"
+            received: list[str] = []
+
+            def writing() -> list[str]:
+                # What an error message must not quote in the log: the prompt sent and the reply so far.
+                return [m.get("content") or "" for m in msgs] + ["".join(received)]
+
             try:
                 thinking_sent = False
                 async for text in stream_chat(settings, msgs, max_tokens=max_tokens, temperature=temperature):
+                    if first is None:
+                        first = time.perf_counter() - start
                     if text is THINKING:
                         if not thinking_sent:
                             thinking_sent = True
                             yield json.dumps({"thinking": True}) + "\n"
                     else:
+                        received.append(text)
                         yield json.dumps({"t": text}) + "\n"
+                outcome = "finished"
             except LLMError as e:
+                # The UI shows the server's full message; the log gets it only if it doesn't quote the writing
+                # (some servers echo the whole request back in their errors).
+                outcome = f"failed: {without_writing(str(e), writing())}"
                 yield json.dumps({"error": str(e)}) + "\n"
+            except Exception as e:
+                trace = "".join(traceback.format_exception(e)).rstrip()
+                if quotes_writing(trace, writing()):
+                    trace = f"{type(e).__name__} (details left out: they quote the text sent to or received from the model)"
+                log.error("AI %s crashed: %s", action, trace)
+                outcome = "crashed"
+                yield json.dumps({"error": f"Something went wrong ({e}). Details are in the log: {log_path()}"}) + "\n"
+            finally:
+                # Also runs when the client hangs up (Stop): the generator is closed mid-stream.
+                level = logging.WARNING if outcome.startswith(("failed", "crashed")) else logging.INFO
+                first_s = f"{first:.1f} s" if first is not None else "never"
+                log.log(level, "AI %s %s after %.1f s (first output %s, %d chars%s)", action, outcome,
+                        time.perf_counter() - start, first_s, sum(map(len, received)),
+                        ", thought first" if thinking_sent else "")
             yield json.dumps({"done": True}) + "\n"
 
         return StreamingResponse(ndjson(), media_type="application/x-ndjson")
+
+    # ---- diagnostics -------------------------------------------------------
+
+    @app.get("/api/about")
+    def about():
+        return {"version": __version__, "log": str(log_path())}
+
+    @app.post("/api/client-log")
+    def client_log(body: ClientLog):
+        """Errors the UI ran into, so they land in the same log as the server's."""
+        level = logging.WARNING if body.level == "warning" else logging.ERROR
+        detail = f"\n{body.stack[:4000]}" if body.stack else ""
+        where = body.where[:200] or "home"
+        logging.getLogger("novelbang.ui").log(level, "%s [%s]%s", body.message[:1000], where, detail)
+        return {"ok": True}
 
     # ---- UI ----------------------------------------------------------------
 

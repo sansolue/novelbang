@@ -92,7 +92,7 @@ async def list_models(s: LLMSettings) -> list[str]:
     except httpx.HTTPError as e:
         raise LLMError(f"Cannot reach {s.base_url}: {e}") from e
     if r.status_code != 200:
-        raise LLMError(f"{r.status_code} from {s.url('/models')}: {r.text[:300]}")
+        raise LLMError(f"{r.status_code} from {s.url('/models')}: {r.text[:300].strip()}")
     return sorted(m["id"] for m in r.json().get("data", []))
 
 
@@ -133,7 +133,7 @@ async def stream_chat(
             try:
                 if r.status_code != 200:
                     body = (await r.aread()).decode(errors="replace")
-                    raise LLMError(f"{r.status_code} from model server: {body[:500]}")
+                    raise LLMError(f"{r.status_code} from model server: {body[:500].strip()}")
                 async for line in r.aiter_lines():
                     if not line.startswith("data:"):
                         continue

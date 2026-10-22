@@ -22,7 +22,10 @@ def main() -> None:
     args = parser.parse_args()
 
     from .config import default_workspace
+    from .logs import setup_logging
     from .server import create_app
+
+    log_file = setup_logging(console=True)
 
     workspace = (Path(args.workspace) if args.workspace else default_workspace()).expanduser().resolve()
     # Never allow any Host header: that would re-open DNS rebinding on an app with
@@ -35,7 +38,8 @@ def main() -> None:
     if wildcard and not args.allow_host:
         print("NovelBang: listening on all interfaces, but only localhost is allowed;"
               " pass --allow-host <name> to reach it from another machine.")
-    print(f"NovelBang: workspace {workspace}\n           open {url}")
+    print(f"NovelBang: workspace {workspace}\n           open {url}\n           log  {log_file}")
     if not args.no_browser:
         threading.Timer(1.0, webbrowser.open, [url]).start()
-    uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
+    # log_config=None: uvicorn's own messages go to our log rather than its own setup.
+    uvicorn.run(app, host=args.host, port=args.port, log_level="warning", log_config=None)

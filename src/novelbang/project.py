@@ -104,7 +104,8 @@ def convert_field(current: object, value: object) -> object:
     elif isinstance(current, str):
         if isinstance(value, (str, int, float)) and not isinstance(value, bool):
             return str(value)
-    raise ValueError(f"expected {type(current).__name__}, got {value!r}")
+    # The type, not the value: these messages reach the log, and values can be a blurb or an API key.
+    raise ValueError(f"expected {type(current).__name__}, got {type(value).__name__}")
 
 
 def fingerprint(text: str) -> dict:

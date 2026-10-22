@@ -23,6 +23,7 @@ import uvicorn
 
 from .config import default_workspace, save_workspace, saved_workspace
 from .llm import LLMSettings, config_dir
+from .logs import log_dir, log_path, setup_logging
 from .project import Project, Workspace
 from .server import create_app
 
@@ -33,24 +34,6 @@ PORT = 47865
 OLLAMA_URL = "http://localhost:11434"
 # Apps started from Finder don't get the shell's PATH.
 EXTRA_PATHS = ["/opt/homebrew/bin", "/usr/local/bin", "/Applications/Ollama.app/Contents/Resources"]
-
-
-def log_dir() -> Path:
-    if sys.platform == "darwin":
-        return Path.home() / "Library" / "Logs" / "NovelBang"
-    return config_dir() / "logs"
-
-
-def setup_logging() -> None:
-    folder = log_dir()
-    folder.mkdir(parents=True, exist_ok=True)
-    stream = open(folder / "novelbang.log", "a", buffering=1, encoding="utf-8")
-    # A windowed app has no console; anything printed would otherwise be lost (or crash).
-    if sys.stdout is None or not sys.stdout.isatty():
-        sys.stdout = sys.stderr = stream
-    logging.basicConfig(
-        stream=stream, level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s"
-    )
 
 
 def free_port(preferred: int) -> int:
@@ -85,24 +68,31 @@ def start_ollama() -> subprocess.Popen | None:
     path = os.pathsep.join([os.environ.get("PATH", ""), *EXTRA_PATHS])
     ollama = shutil.which("ollama", path=path)
     if not ollama:
+        log.info("Ollama isn't running and isn't installed; the co-writer needs a model server")
         return None
-    log.info("Starting %s serve", ollama)
+    log.info("Starting %s serve (its output: %s)", ollama, log_dir() / "ollama.log")
     with open(log_dir() / "ollama.log", "a") as out:
         proc = subprocess.Popen([ollama, "serve"], stdout=out, stderr=subprocess.STDOUT, start_new_session=True)
     for _ in range(20):
         if reachable(f"{OLLAMA_URL}/api/version"):
             break
         time.sleep(0.5)
+    else:
+        log.warning("Ollama didn't answer within 10 s of starting (exit code %s)", proc.poll())
     return proc
 
 
 def reveal(path: Path) -> None:
+    """Open a folder, or show a file selected in its folder."""
     if sys.platform == "darwin":
-        subprocess.run(["open", str(path)], check=False)
+        subprocess.run(["open", "-R", str(path)] if path.is_file() else ["open", str(path)], check=False)
     elif sys.platform == "win32":
-        os.startfile(path)  # type: ignore[attr-defined]
+        if path.is_file():
+            subprocess.run(["explorer", f"/select,{path}"], check=False)
+        else:
+            os.startfile(path)  # type: ignore[attr-defined]
     else:
-        subprocess.run(["xdg-open", str(path)], check=False)
+        subprocess.run(["xdg-open", str(path.parent if path.is_file() else path)], check=False)
 
 
 class DesktopAPI:
@@ -119,6 +109,12 @@ class DesktopAPI:
         if folder.parent.parent != root or not folder.is_dir():
             return False
         reveal(folder)
+        return True
+
+    def reveal_log(self) -> bool:
+        if not log_path().is_file():
+            return False
+        reveal(log_path())
         return True
 
     def workspace_setup_needed(self) -> bool:
@@ -170,9 +166,12 @@ def save_on_close(window) -> None:
 
         try:
             window.evaluate_js("flushSave().then(() => !state.dirty)", finished)
-            done.wait(10)
+            if not done.wait(10):
+                log.warning("The page didn't confirm its save within 10 s; closing anyway")
         except Exception:
             log.exception("Saving before quit failed")
+        if not ok["value"]:
+            log.warning("Unsaved changes when quitting; asking whether to quit anyway")
         if ok["value"] or window.create_confirmation_dialog(
             "Quit without saving?", "NovelBang couldn't save your latest changes."
         ):
@@ -192,12 +191,12 @@ def save_on_close(window) -> None:
 def main() -> None:
     import webview
 
-    setup_logging()
+    setup_logging(console=False)
     workspace = default_workspace().expanduser().resolve()
     first_run = not os.environ.get("NOVELBANG_WORKSPACE") and saved_workspace() is None
     port = free_port(PORT)
     url = f"http://127.0.0.1:{port}"
-    log.info("Starting NovelBang %s on %s with workspace %s", sys.version.split()[0], url, workspace)
+    log.info("Desktop app on %s%s", url, "" if port == PORT else f" (port {PORT} was busy)")
 
     ollama = start_ollama()
     app = create_app(workspace)

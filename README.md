@@ -52,7 +52,7 @@ Open the `.dmg` and drag NovelBang into Applications. The app:
   stops it again on quit (an Ollama that was already running is left alone)
 - saves any unsaved text before the window closes or the app quits
 - saves exports through a Save dialog; **Show in Finder** in Publish opens the exports folder
-- writes its log to `~/Library/Logs/NovelBang/novelbang.log`
+- writes a log for debugging (see [Logs](#logs))
 
 To run it from source without building: `uv run --extra desktop novelbang-desktop`.
 
@@ -181,6 +181,34 @@ are stripped automatically.
 
 Shortcuts: `⌘/Ctrl+J` continue · `⌘/Ctrl+I` italic · `⌘/Ctrl+B` bold ·
 `⌘/Ctrl+S` save now · **Focus** hides the side panels (`Esc` to leave).
+
+## Logs
+
+NovelBang keeps a log for tracking down problems. **Settings** shows where it is, and
+in the desktop app **Show in Finder** opens it. The desktop app, `start.sh` and errors
+the UI runs into all write to the same file:
+
+| | |
+|---|---|
+| macOS | `~/Library/Logs/NovelBang/novelbang.log` |
+| Linux | `~/.local/state/novelbang/novelbang.log` |
+| Windows | `%LOCALAPPDATA%\NovelBang\Logs\novelbang.log` |
+
+It records:
+- startup, with the version, OS, workspace folder and model server
+- each AI request: the model, prompt size, time to first output, duration, and whether
+  it finished, failed (and why) or was stopped
+- exports, restores, milestones, added pictures and settings changes
+- every error, including full tracebacks for crashes and errors seen in the UI
+
+It never records what you wrote: no chapter text, notes, prompts, model replies or
+API keys. That makes it safe to attach to a bug report. Some model servers quote the
+whole request back in their error messages. Before an AI error goes into the log, it's
+checked against the text sent to and received from the model. If any of that is quoted,
+the log notes that the message was left out (you still see the full message in the app). The file rotates at 2 MB and
+keeps four old copies. `NOVELBANG_DEBUG=1` also logs every HTTP request, and
+`NOVELBANG_LOG_DIR` puts the log somewhere else. When running from a terminal,
+warnings and errors also print there.
 
 ## Development
 
