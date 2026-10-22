@@ -1,4 +1,5 @@
 import json
+import os
 import zipfile
 from xml.etree import ElementTree
 
@@ -256,7 +257,8 @@ def test_meta_and_settings_updates_are_validated(tmp_path):
     assert c.put("/api/settings", json={"temperature": "hot", "model": "m"}).status_code == 400
     assert c.get("/api/settings").json()["model"] == ""  # untouched by the rejected update
     assert c.put("/api/settings", json={"api_key": "sk-x"}).status_code == 200
-    assert stat.S_IMODE(settings_path.stat().st_mode) == 0o600
+    if os.name != "nt":  # Windows has no mode bits; the user profile's ACLs keep the key private there
+        assert stat.S_IMODE(settings_path.stat().st_mode) == 0o600
 
 
 def test_concurrent_edits_are_not_lost(project):
