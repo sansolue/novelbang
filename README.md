@@ -68,9 +68,10 @@ opens on the Mac that built it. On any other Mac, macOS blocks it as coming from
 unidentified developer, and others can allow it once under **System Settings → Privacy &
 Security → Open Anyway**.
 
-The Windows build is x64; Windows on ARM runs it under emulation. It isn't code-signed,
-so SmartScreen warns on first run (**More info → Run anyway**). It uses the Microsoft
-Edge WebView2 Runtime, which comes with Windows 11 and up-to-date Windows 10.
+The Windows build is x64; Windows on ARM runs it under emulation. Unless it's signed
+(see [Signing the Windows app](#signing-the-windows-app)), SmartScreen warns on first run
+(**More info → Run anyway**). It uses the Microsoft Edge WebView2 Runtime, which comes
+with Windows 11 and up-to-date Windows 10.
 
 ### Releasing
 
@@ -121,6 +122,37 @@ The release workflow signs and notarizes when these repository secrets are set
 
 If the certificate is set, all five are required. The certificate goes into a temporary
 keychain that is deleted at the end of the job.
+
+### Signing the Windows app
+
+Signing needs a code-signing certificate (OV or EV) from a certificate authority. Since
+2023 its private key must live in hardware or a cloud HSM, so signing goes through the
+CA's or HSM provider's tool rather than a certificate file. The build works with any
+provider whose tool puts the certificate in the Windows certificate store, as SSL.com
+eSigner, DigiCert KeyLocker, Certum SimplySign and a YubiKey all do. `signtool` then
+signs with it.
+
+With the certificate in the store, set its SHA-1 thumbprint (`certutil -user -store My`
+or `Get-ChildItem Cert:\CurrentUser\My` shows it) and build:
+
+```powershell
+$env:WINDOWS_SIGN_CERT = "<thumbprint>"
+$env:WINDOWS_SIGN_TIMESTAMP_URL = "<your provider's timestamp server>"  # optional, DigiCert's by default
+pwsh packaging\build-windows.ps1
+```
+
+That signs `NovelBang.exe` (so the portable zip is signed too), the installer and the
+uninstaller, and checks each signature. `signtool` comes with the Windows SDK; set
+`WINDOWS_SIGNTOOL` if it isn't found.
+
+In the release workflow, set the repository variables (**Settings → Secrets and variables
+→ Actions → Variables**) `WINDOWS_SIGN_CERT` and, optionally, `WINDOWS_SIGN_TIMESTAMP_URL`.
+Then add your provider's setup step where `.github/workflows/release.yml` marks it, in the
+`build-windows` job, with its credentials as secrets. Without the variable it builds unsigned.
+
+A signed app shows your name instead of "Unknown publisher". SmartScreen may still warn
+about a new certificate's first downloads until it builds a reputation; EV certificates no
+longer skip that.
 
 ## Project layout
 

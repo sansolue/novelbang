@@ -144,7 +144,25 @@ jobs:
         with:
           enable-cache: true
 
-      - run: packaging/build-windows.ps1
+      # Signing: set the repository variable WINDOWS_SIGN_CERT to the certificate's SHA-1
+      # thumbprint (and, optionally, WINDOWS_SIGN_TIMESTAMP_URL), and add your signing
+      # provider's setup step here, before the build, to put that certificate in the Windows
+      # certificate store. See README → Signing the Windows app. Without it the build is unsigned.
+      #
+      # - name: Set up the signing certificate
+      #   env:
+      #     PROVIDER_PASSWORD: ${{ secrets.PROVIDER_PASSWORD }}
+      #   run: …
+
+      - name: Build
+        env:
+          WINDOWS_SIGN_CERT: ${{ vars.WINDOWS_SIGN_CERT }}
+          WINDOWS_SIGN_TIMESTAMP_URL: ${{ vars.WINDOWS_SIGN_TIMESTAMP_URL }}
+        run: |
+          if (-not $env:WINDOWS_SIGN_CERT) {
+            Write-Host "::warning::No WINDOWS_SIGN_CERT variable: the Windows app is not signed, so SmartScreen will warn"
+          }
+          packaging/build-windows.ps1
 
       - name: Check the installer installs an app that starts
         env:
@@ -200,6 +218,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           MAC_SIGNED: ${{ secrets.MACOS_CERTIFICATE != '' }}
+          WINDOWS_SIGNED: ${{ vars.WINDOWS_SIGN_CERT != '' }}
         run: |
           prerelease=()
           [[ "$GITHUB_REF_NAME" =~ (a|b|rc|dev)[0-9]*$ ]] && prerelease=(--prerelease)
@@ -222,12 +241,16 @@ jobs:
 
           Download **NovelBang-…-x64-setup.exe** and run it. It installs for your account
           only, with no admin rights needed, and adds NovelBang to the Start menu. Or use the
-          **portable .zip**: unzip it anywhere and run `NovelBang.exe`.
-
-          The installer isn't code-signed yet, so Windows SmartScreen may say "Windows
-          protected your PC". Choose **More info → Run anyway**. NovelBang uses the Microsoft
-          Edge WebView2 Runtime, which comes with Windows 11 and up-to-date Windows 10.
+          **portable .zip**: unzip it anywhere and run `NovelBang.exe`. NovelBang uses the
+          Microsoft Edge WebView2 Runtime, which comes with Windows 11 and up-to-date Windows 10.
           EOF
           notes+=$'\n\n'"$windows"
+          if [[ "$WINDOWS_SIGNED" != true ]]; then
+            read -r -d '' unsigned <<'EOF' || true
+          The installer isn't code-signed yet, so Windows SmartScreen may say "Windows
+          protected your PC". Choose **More info → Run anyway**.
+          EOF
+            notes+=$'\n\n'"$unsigned"
+          fi
           gh release create "$GITHUB_REF_NAME" dist/*.dmg dist/*-setup.exe dist/*-portable.zip "${prerelease[@]}" \
             --verify-tag --title "NovelBang ${GITHUB_REF_NAME#v}" --generate-notes --notes "$notes"

@@ -1,5 +1,5 @@
 ; Inno Setup script for the NovelBang Windows installer. Built by packaging/build-windows.ps1,
-; which passes the version: ISCC /DAppVersion=0.2.0 packaging\NovelBang.iss
+; which passes the version (ISCC /DAppVersion=0.2.0 packaging\NovelBang.iss) and, to sign, /DSign.
 ;
 ; Installs for the current user (no admin rights needed) into %LOCALAPPDATA%\Programs\NovelBang,
 ; with a Start menu entry and an uninstaller. Uninstalling leaves the novels alone.
@@ -29,6 +29,11 @@ UninstallDisplayIcon={app}\NovelBang.exe
 WizardStyle=modern
 Compression=lzma2/max
 SolidCompression=yes
+#ifdef Sign
+; build-windows.ps1 defines the "signtool" command (ISCC /Ssigntool=…) when a certificate is set.
+SignTool=signtool
+SignedUninstaller=yes
+#endif
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
