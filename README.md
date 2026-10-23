@@ -11,8 +11,9 @@ language model running on your own machine, and export a store-ready ebook.
 - **Bring a draft in** — import a Word document, Markdown or plain text file; it's split
   into chapters at its headings.
 - **Publish** — EPUB 3 (passes EPUBCheck; accepted by KDP, Kobo, Apple Books, Google
-  Play, Draft2Digital), print-ready HTML (→ PDF), a static website, a per-chapter
-  serial pack for Royal Road / Wattpad / AO3 / Substack, and a Markdown manuscript.
+  Play, Draft2Digital), a Word manuscript in standard manuscript format for agents and
+  editors, print-ready HTML (→ PDF), a static website, a per-chapter serial pack for
+  Royal Road / Wattpad / AO3 / Substack, and a Markdown manuscript.
 
 ## Quick start
 
@@ -226,6 +227,19 @@ For other formats, save as `.docx` first. From Scrivener, use **File → Compile
 Microsoft Word**; from Pages, **File → Export To → Word**; from Google Docs, **File →
 Download → Microsoft Word**.
 
+### Word manuscript
+
+**Word manuscript** is standard manuscript format, the `.docx` that agents, editors
+and publishers ask for:
+
+- **Layout:** Times New Roman 12 pt, double-spaced, with 1-inch margins.
+- **First page:** your name and the word count to the nearest thousand, with the
+  title halfway down.
+- **Chapters:** each begins on a new page, as a Word heading.
+- **Header:** every later page is headed "Surname / TITLE / page".
+- **Text:** italics stay italic; footnotes and pictures are kept.
+
+It imports back into NovelBang as the same book.
 
 ## Pictures
 
@@ -368,7 +382,7 @@ make log       # follow the debug log
   `~/.config/novelbang/settings.toml`
 - `src/novelbang/prompts.py` — prompt building and context trimming
 - `src/novelbang/history.py` — version history (private git repo per project) and word diff
-- `src/novelbang/export/` — EPUB and web exporters (pure Python, no pandoc)
+- `src/novelbang/export/` — the exporters: EPUB, web and Word (`docx.py`), pure Python
 - `src/novelbang/importer.py` — reads `.docx`, Markdown and text manuscripts
 - `src/novelbang/server.py` — FastAPI JSON API; `static/` — the UI (no build step)
 - `src/novelbang/desktop.py` — the desktop app (pywebview window around the server);
