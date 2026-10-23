@@ -164,6 +164,7 @@ async function showHome() {
       ["Delete…", () => deleteProject(p), "danger"],
     ])),
     projectCard({ title: "New novel", sub: "Start a project", spine: "+" }, newProject),
+    projectCard({ title: "Import…", sub: "From Word, Markdown or text", spine: "⇪" }, () => $("#import-file").click()),
   );
   const archived = data.archived || [];
   $("#archived").hidden = !archived.length;
@@ -204,6 +205,21 @@ function openMenu(anchor, actions) {
 
 function closeMenu() {
   $("#popup-menu")?.remove();
+}
+
+// A .docx, .md or .txt manuscript becomes a new novel, split into chapters at its headings.
+async function importManuscript(file) {
+  toast(`Importing ${file.name}…`);
+  const params = new URLSearchParams({ name: file.name, author: localStorage.getItem("nb-author") || "" });
+  const res = await fetch(`/api/import?${params}`, { method: "POST", body: file });
+  if (!res.ok) {
+    let msg = res.statusText;
+    try { msg = (await res.json()).detail || msg; } catch {}
+    return toast(msg, true);
+  }
+  const p = await res.json();
+  toast(`Imported “${p.title}”: ${p.chapter_count} ${p.chapter_count === 1 ? "chapter" : "chapters"}, ${fmt(p.words)} words`);
+  location.hash = enc(p.id);
 }
 
 async function renameProject(p) {
@@ -1729,6 +1745,11 @@ function wire() {
     if (savedTheme() !== "system") desktop()?.set_theme?.(savedTheme());
   });
   $("#theme-select").addEventListener("change", (e) => applyTheme(e.target.value));
+  $("#import-file").addEventListener("change", (e) => {
+    const file = e.target.files[0];
+    e.target.value = "";
+    if (file) importManuscript(file).catch((err) => toast(err.message, true));
+  });
   $("#update-check").addEventListener("change", (e) => setUpdateChecks(e.target.checked));
   window.addEventListener("error", (e) =>
     reportError(e.message, `at ${e.filename}:${e.lineno}:${e.colno}\n${e.error?.stack || ""}`.trim()));

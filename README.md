@@ -8,6 +8,8 @@ language model running on your own machine, and export a store-ready ebook.
 - **Local AI co-writer** — continue from the cursor, rewrite a selection, summarize a
   chapter, or brainstorm in a chat. Works with any OpenAI-compatible server:
   Ollama, llama.cpp `llama-server`, LM Studio, vLLM.
+- **Bring a draft in** — import a Word document, Markdown or plain text file; it's split
+  into chapters at its headings.
 - **Publish** — EPUB 3 (passes EPUBCheck; accepted by KDP, Kobo, Apple Books, Google
   Play, Draft2Digital), print-ready HTML (→ PDF), a static website, a per-chapter
   serial pack for Royal Road / Wattpad / AO3 / Substack, and a Markdown manuscript.
@@ -205,6 +207,25 @@ Nothing is erased:
 - **Delete** moves it into a `Deleted novels` folder. Move it back out to recover it,
   or empty that folder yourself.
 
+### Importing a manuscript
+
+**Import…** on the home screen makes a new novel from a Word document (`.docx`), a
+Markdown file (`.md`) or a plain text file (`.txt`):
+
+- **Chapters:** the text is split at its headings: Word's heading styles, Markdown's
+  `#` headings, or failing those, lines such as "Chapter 3" or "Prologue".
+  "Chapter 3: The Harbour" becomes a chapter titled "The Harbour".
+- **Formatting:** italic, bold, scene breaks (`***`, `#`, `* * *`), footnotes and
+  pictures come across.
+- **Front and back matter:** prologues and dedications become front matter;
+  epilogues, afterwords and acknowledgements become back matter.
+- **Title page:** a title, subtitle and "by …" line before the first chapter fill in
+  Book details. Anything longer is kept as the first chapter, so no text is lost.
+
+For other formats, save as `.docx` first. From Scrivener, use **File → Compile →
+Microsoft Word**; from Pages, **File → Export To → Word**; from Google Docs, **File →
+Download → Microsoft Word**.
+
 
 ## Pictures
 
@@ -348,6 +369,7 @@ make log       # follow the debug log
 - `src/novelbang/prompts.py` — prompt building and context trimming
 - `src/novelbang/history.py` — version history (private git repo per project) and word diff
 - `src/novelbang/export/` — EPUB and web exporters (pure Python, no pandoc)
+- `src/novelbang/importer.py` — reads `.docx`, Markdown and text manuscripts
 - `src/novelbang/server.py` — FastAPI JSON API; `static/` — the UI (no build step)
 - `src/novelbang/desktop.py` — the desktop app (pywebview window around the server);
   `packaging/` — PyInstaller spec, build script and icon (`make_icon.py` draws it)

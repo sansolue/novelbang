@@ -23,6 +23,7 @@ from . import __version__, config, prompts
 from .export import EXPORTERS
 from .export.render import BOOK_CSS, RenderedChapter, render_markdown
 from .history import HistoryTracker, ProjectHistory, git_available, word_diff
+from .importer import MAX_IMPORT_BYTES, import_manuscript
 from .logs import log_path, quotes_writing, without_writing
 from .llm import THINKING, LLMError, LLMSettings, list_models, stream_chat
 from .project import CHAPTER_KINDS, CHAPTER_STATUSES, Project, ProjectError, Workspace, check_filename
@@ -295,6 +296,19 @@ def create_app(
             snapshot(p, "checkpoint", f"Before {what}")
         except ProjectError:
             log.exception("Snapshot before %s of %s failed", what, p.id)
+
+    @app.post("/api/import")
+    async def import_file(name: str, request: Request, author: str = ""):
+        data = await request.body()
+        if len(data) > MAX_IMPORT_BYTES:
+            raise HTTPException(413, f"That file is over {MAX_IMPORT_BYTES // 2**20} MB")
+        start = time.perf_counter()
+        p = await asyncio.to_thread(import_manuscript, ws, name, data, author)
+        words = sum(p.word_counts().values())
+        # The file name can be a working title, so only its type is logged.
+        log.info("Imported a %s file (%d KB) as %s: %d chapters, %d words in %.1f s", Path(name).suffix.lower(),
+                 len(data) // 1024, p.id, len(p.chapters), words, time.perf_counter() - start)
+        return {**card(p), "chapter_count": len(p.chapters)}
 
     @app.post("/api/projects/{pid}/rename")
     def rename_project(pid: str, body: Rename):
