@@ -19,7 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from . import __version__, prompts
+from . import __version__, config, prompts
 from .export import EXPORTERS
 from .export.render import BOOK_CSS, RenderedChapter, render_markdown
 from .history import HistoryTracker, ProjectHistory, git_available, word_diff
@@ -27,6 +27,7 @@ from .logs import log_path, quotes_writing, without_writing
 from .llm import THINKING, LLMError, LLMSettings, list_models, stream_chat
 from .project import CHAPTER_KINDS, CHAPTER_STATUSES, Project, ProjectError, Workspace, check_filename
 from .search import pattern, replace_in, search
+from .updates import UpdateChecker
 
 STATIC = Path(__file__).parent / "static"
 IMAGE_MIME = {"image/jpeg": ".jpg", "image/png": ".png", "image/gif": ".gif"}
@@ -92,6 +93,10 @@ class ReplaceRequest(BaseModel):
     docs: list[DocRef] | None = None  # None: every chapter and note
 
 
+class UpdatePrefs(BaseModel):
+    enabled: bool
+
+
 class PreviewRequest(BaseModel):
     text: str
     file: str | None = None  # the chapter it belongs to, for its heading
@@ -116,8 +121,12 @@ class AIRequest(BaseModel):
 
 
 def create_app(
-    workspace_dir: Path, settings_path: Path | None = None, extra_hosts: tuple[str, ...] = ()
+    workspace_dir: Path,
+    settings_path: Path | None = None,
+    extra_hosts: tuple[str, ...] = (),
+    updates: UpdateChecker | None = None,
 ) -> FastAPI:
+    """`updates`: look for new releases (the desktop app); the command line doesn't."""
     tracker = HistoryTracker()
     histories: dict[Path, ProjectHistory] = {}
 
@@ -624,6 +633,22 @@ def create_app(
     @app.get("/api/about")
     def about():
         return {"version": __version__, "log": str(log_path())}
+
+    @app.get("/api/update")
+    async def update_status():
+        if updates is None:
+            return {"supported": False}
+        if not config.check_updates():
+            return {"supported": True, "enabled": False}
+        return {"supported": True, "enabled": True, **await updates.status()}
+
+    @app.put("/api/update")
+    def set_update_prefs(body: UpdatePrefs):
+        if updates is None:
+            raise HTTPException(400, "Update checks are part of the desktop app")
+        config.save_check_updates(body.enabled)
+        log.info("Update checks %s", "on" if body.enabled else "off")
+        return {"supported": True, "enabled": body.enabled}
 
     @app.post("/api/client-log")
     def client_log(body: ClientLog):

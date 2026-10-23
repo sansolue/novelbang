@@ -59,6 +59,13 @@ for the installer. The app:
 - saves exports through a Save dialog; **Show in Finder** (**Open folder** on Windows) in
   Publish opens the exports folder
 - writes a log for debugging (see [Logs](#logs))
+- tells you on the home screen when a new version is out, with a link to download it.
+  It asks GitHub for the latest release once a day and sends nothing about you or your
+  writing. It never downloads or installs anything itself. **Not now** hides the notice
+  until the next version, and **Settings → Tell me when a new version is out** turns
+  the check off. The browser version (`start.sh`) never checks.
+
+**Settings → Appearance** picks light or dark, or follows the system setting (the default).
 
 To run it from source without building: `uv run --extra desktop novelbang-desktop`.
 

@@ -6,6 +6,10 @@
 <title>NovelBang</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📖</text></svg>">
 <link rel="stylesheet" href="/static/app.css">
+<script>
+  // Light or dark from Settings, set before the page draws so it never flashes the other one.
+  try { const t = localStorage.getItem("nb-theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch {}
+</script>
 </head>
 <body>
 
@@ -15,8 +19,13 @@
     <h1>NovelBang</h1>
     <p class="muted">Your novels, as plain files in <code id="ws-path"></code>
       <button class="ghost small" id="ws-change" data-action="change-workspace" hidden>Change…</button></p>
-    <button class="ghost" data-action="settings">Model settings</button>
+    <button class="ghost" data-action="settings">Settings</button>
   </header>
+  <div id="update-note" class="update-note" hidden>
+    <span id="update-text"></span>
+    <a class="button small" id="update-link" target="_blank" rel="noopener">Download</a>
+    <button class="ghost small" data-action="update-later">Not now</button>
+  </div>
   <div id="project-grid" class="project-grid"></div>
 </section>
 
@@ -246,7 +255,8 @@
 
 <dialog id="settings-dialog">
   <form method="dialog" id="settings-form">
-    <h3>Model settings</h3>
+    <h3>Settings</h3>
+    <h4>Co-writer model</h4>
     <p class="muted">Any OpenAI-compatible server running on your machine.</p>
     <label>Server URL <input name="base_url" required></label>
     <div class="presets">
@@ -273,6 +283,16 @@
     <label class="check plain"><input name="thinking" type="checkbox"> Let reasoning models think first
       <span class="muted">(qwen3, deepseek-r1, gpt-oss… — slower, and thinking counts against max tokens)</span></label>
     <p class="muted small-label">Roughly 4 characters per token. Keep this below your model's context window (e.g. 12000 chars ≈ 3k tokens).</p>
+    <h4 class="section">App</h4>
+    <label>Appearance
+      <select id="theme-select">
+        <option value="system">Same as the system</option>
+        <option value="light">Light</option>
+        <option value="dark">Dark</option>
+      </select>
+    </label>
+    <label class="check plain" id="update-pref" hidden><input type="checkbox" id="update-check"> Tell me when a new version is out
+      <span class="muted">(checks GitHub once a day; nothing about you or your writing is sent)</span></label>
     <p class="muted small-label about" id="about" hidden>
       NovelBang <span id="about-version"></span> · Log (for reporting problems; it never contains your writing):
       <code id="about-log"></code>

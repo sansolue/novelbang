@@ -1364,6 +1364,7 @@ async function openSettings() {
     else input.value = state.settings[input.name] ?? "";
   }
   $("#model-status").textContent = "";
+  $("#theme-select").value = savedTheme();
   $("#settings-dialog").showModal();
   detectModels(true);
   api("GET", "/api/about").then((a) => {
@@ -1399,6 +1400,48 @@ async function saveSettings() {
   state.settings = await api("PUT", "/api/settings", data);
   $("#model-badge").textContent = state.settings.model || "no model";
   toast("Settings saved");
+}
+
+// ---------------------------------------------------------------- appearance & updates
+
+function savedTheme() {
+  try { return localStorage.getItem("nb-theme") || "system"; } catch { return "system"; }
+}
+
+// "system", "light" or "dark". index.html applies the saved choice before the page draws.
+function applyTheme(theme) {
+  if (theme === "light" || theme === "dark") document.documentElement.dataset.theme = theme;
+  else delete document.documentElement.dataset.theme;
+  try { localStorage.setItem("nb-theme", theme); } catch {}
+  desktop()?.set_theme?.(theme); // the desktop app's title bar follows along
+}
+
+// The desktop app checks for a newer release (once a day, server side); the browser version doesn't.
+async function checkForUpdate() {
+  try { state.update = await api("GET", "/api/update"); } catch { return; }
+  renderUpdate();
+}
+
+function renderUpdate() {
+  const u = state.update;
+  let later = "";
+  try { later = localStorage.getItem("nb-update-later") || ""; } catch {}
+  const note = $("#update-note");
+  note.hidden = !(u?.newer && later !== u.latest);
+  if (!note.hidden) {
+    $("#update-text").textContent = `NovelBang ${u.latest} is out. You have ${u.current}.`;
+    $("#update-link").href = u.url;
+  }
+  $("#update-pref").hidden = !u?.supported;
+  $("#update-check").checked = !!u?.enabled;
+}
+
+async function setUpdateChecks(enabled) {
+  try {
+    state.update = await api("PUT", "/api/update", { enabled });
+    if (enabled) await checkForUpdate();
+    else renderUpdate();
+  } catch (e) { toast(e.message, true); }
 }
 
 // ---------------------------------------------------------------- publish
@@ -1479,6 +1522,10 @@ function wire() {
     "search-close": closeBookSearch,
     "bs-replace-all": () => replaceInBook().catch((e) => toast(e.message, true)),
     "reveal-log": () => desktop().reveal_log(),
+    "update-later": () => {
+      try { localStorage.setItem("nb-update-later", state.update.latest); } catch {}
+      renderUpdate();
+    },
     "change-workspace": () => changeWorkspace().catch((e) => toast(e.message, true)),
     "reveal-exports": () => window.pywebview.api.reveal_exports(state.project.id),
     "new-chapter": newChapter,
@@ -1606,7 +1653,12 @@ function wire() {
       fetch(url, { method: "PUT", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: $("#doc-text").value }) });
     }
   });
-  window.addEventListener("pywebviewready", desktopHome);
+  window.addEventListener("pywebviewready", () => {
+    desktopHome();
+    if (savedTheme() !== "system") desktop()?.set_theme?.(savedTheme());
+  });
+  $("#theme-select").addEventListener("change", (e) => applyTheme(e.target.value));
+  $("#update-check").addEventListener("change", (e) => setUpdateChecks(e.target.checked));
   window.addEventListener("error", (e) =>
     reportError(e.message, `at ${e.filename}:${e.lineno}:${e.colno}\n${e.error?.stack || ""}`.trim()));
   window.addEventListener("unhandledrejection", (e) => reportError(e.reason?.message || e.reason, e.reason?.stack));
@@ -1617,3 +1669,4 @@ function wire() {
 
 wire();
 loadSettings().catch(() => {}).finally(() => route().catch((e) => toast(e.message, true)));
+checkForUpdate();

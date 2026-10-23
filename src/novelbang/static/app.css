@@ -17,13 +17,20 @@
   --radius: 8px;
   color-scheme: light;
 }
+/* Dark: when the system is dark, unless Settings says Light; or whenever Settings says Dark. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #1a1917; --panel: #201f1c; --paper: #242320; --fg: #e8e3da; --muted: #8f887c;
     --line: #36332e; --accent: #d9895d; --accent-fg: #1a1917; --hover: #2c2a26; --sel: #3a2e25;
     --danger: #e0645b; --ok: #6cbf7e; --warn: #e0b060;
     color-scheme: dark;
   }
+}
+:root[data-theme="dark"] {
+  --bg: #1a1917; --panel: #201f1c; --paper: #242320; --fg: #e8e3da; --muted: #8f887c;
+  --line: #36332e; --accent: #d9895d; --accent-fg: #1a1917; --hover: #2c2a26; --sel: #3a2e25;
+  --danger: #e0645b; --ok: #6cbf7e; --warn: #e0b060;
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -250,6 +257,14 @@ dialog h3 { margin: 0 0 12px; font: 600 20px var(--serif); }
 dialog h4 { margin: 4px 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
 dialog menu { display: flex; justify-content: flex-end; gap: 8px; padding: 0; margin: 16px 0 0; }
 .presets { display: flex; gap: 4px; margin: -4px 0 10px; }
+dialog h4.section { margin: 18px 0 8px; padding-top: 12px; border-top: 1px solid var(--line); }
+.update-note {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: -16px 0 24px; padding: 10px 14px;
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--line)); border-radius: var(--radius);
+  background: color-mix(in srgb, var(--accent) 8%, var(--panel)); font-size: 13px;
+}
+.update-note span { flex: 1; }
+.update-note a.button { color: var(--accent-fg); background: var(--accent); border-color: var(--accent); text-decoration: none; }
 
 .publish-grid { display: grid; grid-template-columns: 1fr 1.2fr; gap: 24px; }
 .checks, .exports { list-style: none; padding: 0; margin: 0 0 12px; font-size: 13px; }

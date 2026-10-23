@@ -27,6 +27,7 @@ from .logs import log_dir, log_path, setup_logging
 from .procs import NO_CONSOLE
 from .project import Project, Workspace
 from .server import create_app
+from .updates import UpdateChecker
 
 log = logging.getLogger("novelbang")
 
@@ -127,6 +128,19 @@ class DesktopAPI:
         reveal(log_path())
         return True
 
+    def set_theme(self, theme: str) -> None:
+        """Match the window's title bar to the page's light/dark choice ("system" follows macOS).
+        Elsewhere the title bar follows the system setting."""
+        if sys.platform != "darwin":
+            return
+        import AppKit
+        from PyObjCTools import AppHelper
+
+        name = {"light": AppKit.NSAppearanceNameAqua, "dark": AppKit.NSAppearanceNameDarkAqua}.get(theme)
+        AppHelper.callAfter(
+            lambda: AppKit.NSApp.setAppearance_(AppKit.NSAppearance.appearanceNamed_(name) if name else None)
+        )
+
     def workspace_setup_needed(self) -> bool:
         return self._first_run
 
@@ -209,7 +223,7 @@ def main() -> None:
     log.info("Desktop app on %s%s", url, "" if port == PORT else f" (port {PORT} was busy)")
 
     ollama = start_ollama()
-    app = create_app(workspace)
+    app = create_app(workspace, updates=UpdateChecker())
     api = DesktopAPI(app.state.workspace, first_run)
     server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning", log_config=None))
     thread = threading.Thread(target=server.run, name="server", daemon=True)
