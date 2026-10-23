@@ -157,18 +157,87 @@ async function showHome() {
   desktopHome();
   const grid = $("#project-grid");
   grid.replaceChildren(
-    ...data.projects.map((p) =>
-      el("button", { class: "project-card", onclick: () => (location.hash = enc(p.id)) },
-        el("div", { class: "spine" },
-          p.has_cover ? el("img", { src: `/api/projects/${enc(p.id)}/cover`, alt: "" }) : p.title),
-        el("strong", {}, p.title),
-        el("span", {}, `${p.author || "—"} · ${fmt(p.words)} words`))
-    ),
-    el("button", { class: "project-card", onclick: newProject },
-      el("div", { class: "spine new" }, "+"),
-      el("strong", {}, "New novel"),
-      el("span", {}, "Start a project"))
+    ...data.projects.map((p) => projectCard(p, () => (location.hash = enc(p.id)), [
+      ["Rename…", () => renameProject(p)],
+      ["Duplicate", () => duplicateProject(p)],
+      ["Archive", () => archiveProject(p)],
+      ["Delete…", () => deleteProject(p), "danger"],
+    ])),
+    projectCard({ title: "New novel", sub: "Start a project", spine: "+" }, newProject),
   );
+  const archived = data.archived || [];
+  $("#archived").hidden = !archived.length;
+  $("#archived-count").textContent = archived.length;
+  $("#archived-grid").replaceChildren(...archived.map((p) => projectCard(p, () => restoreProject(p), [
+    ["Restore", () => restoreProject(p)],
+    ["Delete…", () => deleteProject(p, true), "danger"],
+  ], true)));
+}
+
+// A novel on the home screen; `actions` fill its ⋯ menu.
+function projectCard(p, open, actions = [], archived = false) {
+  const cover = p.has_cover && !archived ? el("img", { src: `/api/projects/${enc(p.id)}/cover`, alt: "" }) : null;
+  return el("div", { class: "project-card" + (archived ? " archived" : "") },
+    el("button", { class: "card-open", onclick: open, title: archived ? "Restore to your novels" : null },
+      el("div", { class: "spine" + (p.spine ? " new" : "") }, cover || p.spine || p.title),
+      el("strong", {}, p.title),
+      el("span", {}, p.sub ?? `${p.author || "—"} · ${fmt(p.words)} words`)),
+    actions.length
+      ? el("button", { class: "card-menu ghost small", title: "More", "aria-haspopup": "menu",
+          onclick: (e) => openMenu(e.currentTarget, actions) }, "⋯")
+      : null);
+}
+
+function openMenu(anchor, actions) {
+  closeMenu();
+  const menu = el("div", { class: "menu", role: "menu", id: "popup-menu" },
+    ...actions.map(([label, run, cls]) => el("button", {
+      role: "menuitem", class: cls || "",
+      onclick: () => { closeMenu(); Promise.resolve(run()).catch((e) => toast(e.message, true)); },
+    }, label)));
+  document.body.append(menu);
+  const r = anchor.getBoundingClientRect();
+  menu.style.top = `${r.bottom + window.scrollY + 4}px`;
+  menu.style.left = `${Math.min(r.left + window.scrollX, window.innerWidth - menu.offsetWidth - 12)}px`;
+  menu.querySelector("button").focus();
+}
+
+function closeMenu() {
+  $("#popup-menu")?.remove();
+}
+
+async function renameProject(p) {
+  const r = await ask("Rename novel", [{ name: "title", label: "Title", value: p.title, required: true }]);
+  if (!r || r.title.trim() === p.title) return;
+  const res = await api("POST", `/api/projects/${enc(p.id)}/rename`, { title: r.title });
+  toast(res.id === p.id ? "Renamed" : `Renamed (its folder is now ${res.id})`);
+  await showHome();
+}
+
+async function duplicateProject(p) {
+  const res = await api("POST", `/api/projects/${enc(p.id)}/duplicate`);
+  toast(`Made “${res.title}”`);
+  await showHome();
+}
+
+async function archiveProject(p) {
+  await api("POST", `/api/projects/${enc(p.id)}/archive`);
+  toast(`Archived “${p.title}”. It's under Archived at the bottom.`);
+  await showHome();
+}
+
+async function restoreProject(p) {
+  const res = await api("POST", `/api/archived/${enc(p.id)}/restore`);
+  toast(`Restored “${res.title}”`);
+  await showHome();
+}
+
+async function deleteProject(p, archived = false) {
+  if (!confirm(`Delete “${p.title}”?\n\nIts folder moves to “Deleted novels” in your novels folder. `
+      + "Nothing is erased: move it back from there to get it back.")) return;
+  await api("DELETE", `${archived ? "/api/archived" : "/api/projects"}/${enc(p.id)}`);
+  toast(`Deleted “${p.title}”`);
+  await showHome();
 }
 
 // ---------------------------------------------------------------- workspace (desktop app)
@@ -1546,6 +1615,7 @@ function wire() {
     "load-models": () => detectModels(),
   };
   document.addEventListener("click", (e) => {
+    if (!e.target.closest("#popup-menu, .card-menu")) closeMenu();
     const a = e.target.closest("[data-action]");
     if (a && actions[a.dataset.action]) { e.preventDefault(); actions[a.dataset.action](); }
     const ai = e.target.closest("[data-ai]");
@@ -1640,6 +1710,7 @@ function wire() {
       else openFind();
     }
     if (mod && e.key.toLowerCase() === "g" && !$("#find-bar").hidden) { e.preventDefault(); stepFind(e.shiftKey ? -1 : 1); }
+    if (e.key === "Escape" && $("#popup-menu")) return closeMenu();
     if (e.key === "Escape" && document.querySelector("dialog[open]")) return; // the dialog closes itself
     if (e.key === "Escape" && $("#find-bar").contains(document.activeElement)) closeFind();
     else if (e.key === "Escape" && $("#search-panel").contains(document.activeElement)) closeBookSearch();

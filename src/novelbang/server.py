@@ -39,6 +39,10 @@ class NewProject(BaseModel):
     author: str = ""
 
 
+class Rename(BaseModel):
+    title: str
+
+
 class NewChapter(BaseModel):
     title: str = "Untitled chapter"
     kind: str = "chapter"
@@ -246,16 +250,23 @@ def create_app(
 
     # ---- projects ----------------------------------------------------------
 
+    def card(p: Project) -> dict:
+        return {"id": p.id, "title": p.meta.title, "author": p.meta.author,
+                "words": sum(p.word_counts().values()), "chapters": len(p.chapters),
+                "has_cover": p.cover_path() is not None}
+
     @app.get("/api/projects")
     def projects():
+        archived = []
+        for p in ws.list_archived():
+            try:
+                archived.append(card(p))
+            except Exception:
+                log.exception("Can't read archived novel %s", p.root)
         return {
             "workspace": str(ws.root),
-            "projects": [
-                {"id": p.id, "title": p.meta.title, "author": p.meta.author,
-                 "words": sum(p.word_counts().values()), "chapters": len(p.chapters),
-                 "has_cover": p.cover_path() is not None}
-                for p in ws.list()
-            ],
+            "projects": [card(p) for p in ws.list()],
+            "archived": archived,
             "kinds": CHAPTER_KINDS,
             "statuses": CHAPTER_STATUSES,
         }
@@ -274,6 +285,55 @@ def create_app(
             except ProjectError:
                 log.exception("Session snapshot of %s failed", p.root)
         return summary(p)
+
+    # ---- managing whole novels (from the home screen) ------------------------
+
+    def before_moving(p: Project, what: str) -> None:
+        """Keep the history whole: record pending edits, and stop tracking the old folder."""
+        tracker.forget(p.root)
+        try:
+            snapshot(p, "checkpoint", f"Before {what}")
+        except ProjectError:
+            log.exception("Snapshot before %s of %s failed", what, p.id)
+
+    @app.post("/api/projects/{pid}/rename")
+    def rename_project(pid: str, body: Rename):
+        before_moving(ws.get(pid), "renaming the novel")
+        p = ws.rename(pid, body.title)
+        log.info("Renamed novel %s to %s", pid, p.id)
+        return card(p)
+
+    @app.post("/api/projects/{pid}/duplicate")
+    def duplicate_project(pid: str):
+        p = ws.duplicate(pid)
+        log.info("Duplicated novel %s as %s", pid, p.id)
+        return card(p)
+
+    @app.post("/api/projects/{pid}/archive")
+    def archive_project(pid: str):
+        before_moving(ws.get(pid), "archiving the novel")
+        ws.archive(pid)
+        log.info("Archived novel %s", pid)
+        return {"ok": True}
+
+    @app.post("/api/archived/{pid}/restore")
+    def unarchive_project(pid: str):
+        p = ws.unarchive(pid)
+        log.info("Restored archived novel %s", p.id)
+        return card(p)
+
+    @app.delete("/api/projects/{pid}")
+    def delete_project(pid: str):
+        before_moving(ws.get(pid), "deleting the novel")
+        dest = ws.delete(pid)
+        log.info("Moved novel %s to %s", pid, dest)
+        return {"moved_to": str(dest)}
+
+    @app.delete("/api/archived/{pid}")
+    def delete_archived(pid: str):
+        dest = ws.delete(pid, archived=True)
+        log.info("Moved archived novel %s to %s", pid, dest)
+        return {"moved_to": str(dest)}
 
     @app.put("/api/projects/{pid}/meta")
     def put_meta(pid: str, body: dict):

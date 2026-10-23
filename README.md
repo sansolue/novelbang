@@ -191,6 +191,21 @@ hand is picked up and added to the end of the book.
 Chapters have a **type**: *front matter* (dedication, prologue, epigraph), *chapter*
 (numbered), or *back matter* (afterword, acknowledgements, about the author).
 
+### Managing novels
+
+The **⋯** on a novel's card on the home screen renames, duplicates, archives or deletes it.
+Nothing is erased:
+
+- **Rename** changes the title and renames the novel's folder to match.
+- **Duplicate** makes a copy to experiment on, with the same text, notes and pictures.
+  The copy gets its own book identifier, so stores treat it as a different book, and its
+  version history starts fresh.
+- **Archive** moves the novel into an `Archived novels` folder and lists it under
+  **Archived** at the bottom of the home screen. Click it there to bring it back.
+- **Delete** moves it into a `Deleted novels` folder. Move it back out to recover it,
+  or empty that folder yourself.
+
+
 ## Pictures
 
 Click **Picture…** above a chapter, or paste or drop an image into the text. The file

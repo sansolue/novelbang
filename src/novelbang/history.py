@@ -265,6 +265,12 @@ class HistoryTracker:
             self._seen.add(root)
             return True
 
+    def forget(self, root: Path) -> bool:
+        """Stop tracking a project that's moving; True if it had edits not yet snapshotted."""
+        with self._lock:
+            self._seen.discard(root)
+            return self._pending.pop(root, None) is not None
+
     def due(self, force: bool = False) -> list[Path]:
         now = time.monotonic()
         with self._lock:

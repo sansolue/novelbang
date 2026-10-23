@@ -33,6 +33,8 @@ from urllib.parse import unquote
 import tomli_w
 
 PROJECT_FILE = "novel.toml"
+ARCHIVE_DIR = "Archived novels"
+TRASH_DIR = "Deleted novels"
 CHAPTER_KINDS = ("front", "chapter", "back")
 CHAPTER_STATUSES = ("idea", "draft", "revised", "final")
 COVER_NAMES = ("cover.jpg", "cover.jpeg", "cover.png")
@@ -243,12 +245,7 @@ class Project:
 
     @classmethod
     def create(cls, workspace: Path, title: str, author: str = "") -> Project:
-        base = slugify(title, "novel")
-        root = workspace / base
-        n = 2
-        while root.exists():
-            root = workspace / f"{base}-{n}"
-            n += 1
+        root = _free_path(workspace, slugify(title, "novel"))
         for sub in ("chapters", "notes", "assets", "exports"):
             (root / sub).mkdir(parents=True)
         for name, body in DEFAULT_NOTES.items():
@@ -588,8 +585,7 @@ class Workspace:
         return projects
 
     def get(self, project_id: str) -> Project:
-        if "/" in project_id or "\\" in project_id or project_id.startswith("."):
-            raise ProjectError("Invalid project id")
+        _check_id(project_id)
         path = self.root / project_id
         if not Project.is_project(path):
             raise ProjectError(f"No project {project_id!r}")
@@ -597,6 +593,110 @@ class Workspace:
 
     def create(self, title: str, author: str = "") -> Project:
         return Project.create(self.root, title, author)
+
+    # ---- managing whole novels ----------------------------------------------
+    # Nothing is erased: deleted novels go to "Deleted novels/", archived ones to
+    # "Archived novels/", both plain folders in the workspace. (Novel folders are
+    # slugs, which never contain a space, so these names can't clash with one.)
+
+    @property
+    def archive_dir(self) -> Path:
+        return self.root / ARCHIVE_DIR
+
+    @property
+    def trash_dir(self) -> Path:
+        return self.root / TRASH_DIR
+
+    def list_archived(self) -> list[Project]:
+        if not self.archive_dir.is_dir():
+            return []
+        return [Project.load(p) for p in sorted(self.archive_dir.iterdir()) if p.is_dir() and Project.is_project(p)]
+
+    def get_archived(self, project_id: str) -> Project:
+        _check_id(project_id)
+        path = self.archive_dir / project_id
+        if not Project.is_project(path):
+            raise ProjectError(f"No archived project {project_id!r}")
+        return Project.load(path)
+
+    @contextmanager
+    def _locked(self, project_id: str) -> Iterator[None]:
+        with self._locks_guard:
+            lock = self._locks.setdefault(project_id, threading.Lock())
+        with lock:
+            yield
+
+    def rename(self, project_id: str, title: str) -> Project:
+        """Retitle a novel and rename its folder to match (when that name is free)."""
+        title = title.strip()
+        if not title:
+            raise ProjectError("A novel needs a title")
+        with self._locked(project_id):
+            p = self.get(project_id)
+            p.meta.title = title
+            p.save()
+            if slugify(title, "novel") != p.id:
+                dest = _free_path(self.root, slugify(title, "novel"))
+                p.root.rename(dest)
+                p = Project.load(dest)
+        return p
+
+    def duplicate(self, project_id: str) -> Project:
+        """A copy to experiment on: same text, notes and pictures; its own identity and history."""
+        with self._locked(project_id):
+            src = self.get(project_id)
+            title = f"{src.meta.title} (copy)"
+            dest = _free_path(self.root, slugify(title, "novel"))
+
+            def skip(folder: str, names: list[str]) -> set[str]:
+                top = Path(folder).resolve() == src.root.resolve()
+                left_out = {"exports", "trash", ".git"} if top else set()
+                if Path(folder).name == META_DIR:
+                    left_out.add("history.git")  # the copy's history starts now
+                return {n for n in names if n in left_out or n.endswith(".tmp")}
+
+            shutil.copytree(src.root, dest, ignore=skip)
+            (dest / "exports").mkdir(exist_ok=True)
+        copy = Project.load(dest)
+        copy.meta.title = title
+        copy.meta.identifier = f"urn:uuid:{uuid.uuid4()}"  # stores treat it as a different book
+        copy.save()
+        return copy
+
+    def archive(self, project_id: str) -> None:
+        with self._locked(project_id):
+            p = self.get(project_id)
+            self.archive_dir.mkdir(exist_ok=True)
+            p.root.rename(_free_path(self.archive_dir, p.id))
+
+    def unarchive(self, project_id: str) -> Project:
+        with self._locked(project_id):
+            p = self.get_archived(project_id)
+            dest = _free_path(self.root, p.id)
+            p.root.rename(dest)
+        return Project.load(dest)
+
+    def delete(self, project_id: str, archived: bool = False) -> Path:
+        """Move a novel to "Deleted novels/"; returns where it went."""
+        with self._locked(project_id):
+            p = self.get_archived(project_id) if archived else self.get(project_id)
+            self.trash_dir.mkdir(exist_ok=True)
+            dest = _free_path(self.trash_dir, p.id)
+            p.root.rename(dest)
+        return dest
+
+
+def _check_id(project_id: str) -> None:
+    if not project_id or "/" in project_id or "\\" in project_id or project_id.startswith("."):
+        raise ProjectError("Invalid project id")
+
+
+def _free_path(folder: Path, name: str) -> Path:
+    """folder/name, or folder/name-2, -3… if that's taken."""
+    path, n = folder / name, 2
+    while path.exists():
+        path, n = folder / f"{name}-{n}", n + 1
+    return path
 
 
 def _atomic_write(path: Path, text: str) -> None:

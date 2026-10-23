@@ -75,8 +75,24 @@ label.check input { width: auto; }
 .home-head h1 { font: 600 32px var(--serif); margin: 0; }
 .home-head p { flex: 1; margin: 0; }
 .project-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 24px; }
-.project-card { cursor: pointer; background: none; border: none; padding: 0; display: block; text-align: left; }
-.project-card:hover { background: none; }
+.project-card { position: relative; }
+.card-open { cursor: pointer; background: none; border: none; padding: 0; display: block; width: 100%; text-align: left; white-space: normal; }
+.card-open:hover { background: none; }
+.project-card .card-menu {
+  position: absolute; top: 6px; right: 6px; padding: 0 8px; font-size: 16px; line-height: 22px; border-radius: 6px;
+  background: color-mix(in srgb, var(--panel) 85%, transparent); opacity: 0; transition: opacity .15s;
+}
+.project-card:hover .card-menu, .project-card .card-menu:focus-visible { opacity: 1; }
+@media (hover: none) { .project-card .card-menu { opacity: 1; } }
+.project-card.archived .spine { filter: grayscale(.8); opacity: .7; }
+.archived { margin-top: 40px; }
+.archived summary { cursor: pointer; color: var(--muted); font-size: 13px; margin-bottom: 12px; }
+.menu {
+  position: absolute; z-index: 20; min-width: 150px; padding: 4px; display: flex; flex-direction: column;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: 0 8px 28px rgba(0,0,0,.18);
+}
+.menu button { border: none; background: none; justify-content: flex-start; padding: 6px 10px; }
+.menu button:hover, .menu button:focus { background: var(--hover); outline: none; }
 .project-card .spine {
   aspect-ratio: 5 / 8; border-radius: 3px 8px 8px 3px; overflow: hidden; margin-bottom: 10px;
   background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 55%, #000));
@@ -84,7 +100,7 @@ label.check input { width: auto; }
   font: 600 18px/1.25 var(--serif); box-shadow: 0 2px 4px rgba(0,0,0,.12), 0 8px 24px rgba(0,0,0,.12);
   transition: transform .15s;
 }
-.project-card:hover .spine { transform: translateY(-3px); }
+.card-open:hover .spine { transform: translateY(-3px); }
 .project-card .spine:has(img) { padding: 0; }
 .project-card .spine img { width: 100%; height: 100%; object-fit: cover; }
 .project-card .spine.new { background: transparent; border: 2px dashed var(--line); color: var(--muted); box-shadow: none; font-size: 40px; }
