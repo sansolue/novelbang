@@ -85,9 +85,12 @@ with Windows 11 and up-to-date Windows 10.
 Pushing a version tag builds the app on GitHub and publishes a release:
 
 ```sh
-# set version = "0.2.0" in pyproject.toml, commit, then:
-git tag v0.2.0 && git push origin v0.2.0
+make bump VERSION=0.2.0   # sets the version everywhere and commits it
+make release              # runs the tests, asks, then pushes master and the tag v0.2.0
 ```
+
+By hand, that's: set the version in `pyproject.toml` and `src/novelbang/__init__.py`,
+commit, then `git tag v0.2.0 && git push origin v0.2.0`.
 
 `.github/workflows/release.yml` runs the tests on Linux and Windows and checks that the
 tag matches the version in `pyproject.toml`. It then builds the Mac app on Apple silicon
@@ -313,9 +316,15 @@ warnings and errors also print there.
 
 ## Development
 
+`make` lists the common tasks:
+
 ```sh
-uv run pytest
-uv run novelbang /tmp/ws --no-browser --port 8765
+make setup     # install everything, including the desktop window and build tools
+make test      # run the tests
+make dev       # run on a scratch folder with debug logging (http://127.0.0.1:8765)
+make desktop   # run the desktop app from source
+make app       # build the desktop app for this computer into dist/
+make log       # follow the debug log
 ```
 
 - `src/novelbang/project.py` — the on-disk format
