@@ -8,7 +8,10 @@ from xml.etree import ElementTree as ET
 import pytest
 from fastapi.testclient import TestClient
 
+from novelbang.export import pdf as pdf_mod
 from novelbang.export.docx import approx_words, build_docx, image_size
+from novelbang.export.pdf import build_pdf
+from novelbang.export.web import build_manuscript_html
 from novelbang.importer import import_manuscript, read_markdown, split_chapters
 from novelbang.project import ProjectError, Workspace
 from novelbang.server import create_app
@@ -137,9 +140,42 @@ def test_import_refuses_what_it_cannot_read(tmp_path):
     assert ws.list() == []  # nothing half-made is left behind
 
 
+# ---- print PDF -----------------------------------------------------------------------
+
+def pages(pdf: bytes) -> int:
+    return len(re.findall(rb"/Type\s*/Page\b", pdf))
+
+
+def test_print_pdf(book, tmp_path):
+    out = build_pdf(book, tmp_path)
+    data = out.read_bytes()
+    assert data.startswith(b"%PDF-") and b"/Title (The Salt Road)" in data or b"The Salt Road" in data
+    # title, copyright, dedication (recto 3), blank, chapter 1 (recto 5)…, chapter 2 on a recto
+    assert pages(data) >= 7
+    assert re.search(rb"/MediaBox\s*\[0(?:\.0+)? 0(?:\.0+)? 432(?:\.0+)? 648(?:\.0+)?\]", data)  # 6 × 9 in
+    book.meta.update({"trim_size": "5x8"})
+    small = build_pdf(book, tmp_path).read_bytes()
+    assert re.search(rb"/MediaBox\s*\[0(?:\.0+)? 0(?:\.0+)? 360(?:\.0+)? 576(?:\.0+)?\]", small)
+    assert pages(small) > pages(data)  # the same text on smaller pages
+
+
+def test_trim_size_is_validated_and_used_by_print_html(book, tmp_path):
+    with pytest.raises(ProjectError, match="trim_size"):
+        book.meta.update({"trim_size": "7x10"})
+    book.meta.update({"trim_size": "5.5x8.5"})
+    assert "size: 5.5in 8.5in" in build_manuscript_html(book, tmp_path).read_text()
+
+
+def test_pdf_characters_the_font_lacks(book, tmp_path, monkeypatch):
+    book.write_chapter(book.chapters[1].file, "Ἀχιλλεύς and Жуков.")
+    monkeypatch.setattr(pdf_mod, "SYSTEM_FALLBACKS", ())
+    with pytest.raises(ProjectError, match="can't print some of the book's characters"):
+        build_pdf(book, tmp_path)
+
+
 def test_import_and_export_api(book, tmp_path):
     c = TestClient(create_app(tmp_path / "ws", settings_path=tmp_path / "s.toml"), base_url="http://127.0.0.1")
-    for fmt, suffix in (("docx", "-manuscript.docx"),):
+    for fmt, suffix in (("docx", "-manuscript.docx"), ("pdf", "-print.pdf")):
         r = c.post(f"/api/projects/{book.id}/export/{fmt}").json()
         assert r["name"].endswith(suffix)
     data = (book.exports_dir / "the-salt-road-manuscript.docx").read_bytes()

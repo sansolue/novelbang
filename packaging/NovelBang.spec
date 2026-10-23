@@ -20,7 +20,7 @@ a = Analysis(
     datas=collect_data_files("novelbang"),  # static/ (the UI)
     # uvicorn picks its protocol and loop implementations at runtime.
     hiddenimports=collect_submodules("uvicorn"),
-    excludes=["tkinter", "pytest", "PIL", "PyInstaller"],
+    excludes=["tkinter", "pytest", "PyInstaller"],  # not PIL: the PDF export (fpdf2) uses it
 )
 pyz = PYZ(a.pure)
 exe = EXE(

@@ -11,9 +11,10 @@ language model running on your own machine, and export a store-ready ebook.
 - **Bring a draft in** — import a Word document, Markdown or plain text file; it's split
   into chapters at its headings.
 - **Publish** — EPUB 3 (passes EPUBCheck; accepted by KDP, Kobo, Apple Books, Google
-  Play, Draft2Digital), a Word manuscript in standard manuscript format for agents and
-  editors, print-ready HTML (→ PDF), a static website, a per-chapter serial pack for
-  Royal Road / Wattpad / AO3 / Substack, and a Markdown manuscript.
+  Play, Draft2Digital), a print-ready PDF paperback interior, a Word manuscript in
+  standard manuscript format for agents and editors, print-ready HTML, a static
+  website, a per-chapter serial pack for Royal Road / Wattpad / AO3 / Substack, and a
+  Markdown manuscript.
 
 ## Quick start
 
@@ -227,7 +228,23 @@ For other formats, save as `.docx` first. From Scrivener, use **File → Compile
 Microsoft Word**; from Pages, **File → Export To → Word**; from Google Docs, **File →
 Download → Microsoft Word**.
 
-### Word manuscript
+### Print PDF and Word manuscript
+
+**Print PDF** is a paperback interior for KDP Print, IngramSpark or Lulu, or a PDF to
+read:
+
+- **Page size:** the trim size set in Book details, 6 × 9 in by default.
+- **Opening pages:** a title page, then a copyright page with the copyright line, ISBN
+  and publisher.
+- **Chapters:** each starts on a right-hand page. Running heads show the author on
+  left-hand pages and the title on right-hand ones; chapter openings show only the page
+  number.
+- **Typesetting:** justified Crimson Text, with each chapter's footnotes at its end.
+  Margins are 0.75 in all round, enough for books up to about 700 pages on KDP.
+- **Other alphabets:** for characters Crimson Text lacks, such as Greek or Cyrillic, it
+  uses a system font that has them, or says it can't.
+- **Not covered:** the cover is made separately; KDP's cover calculator gives its size
+  for your page count.
 
 **Word manuscript** is standard manuscript format, the `.docx` that agents, editors
 and publishers ask for:
@@ -382,7 +399,8 @@ make log       # follow the debug log
   `~/.config/novelbang/settings.toml`
 - `src/novelbang/prompts.py` — prompt building and context trimming
 - `src/novelbang/history.py` — version history (private git repo per project) and word diff
-- `src/novelbang/export/` — the exporters: EPUB, web and Word (`docx.py`), pure Python
+- `src/novelbang/export/` — the exporters: EPUB, web, Word (`docx.py`) and PDF (`pdf.py`,
+  with fpdf2 and the bundled Crimson Text font, SIL Open Font License, in `export/fonts/`)
 - `src/novelbang/importer.py` — reads `.docx`, Markdown and text manuscripts
 - `src/novelbang/server.py` — FastAPI JSON API; `static/` — the UI (no build step)
 - `src/novelbang/desktop.py` — the desktop app (pywebview window around the server);

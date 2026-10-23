@@ -37,6 +37,8 @@ ARCHIVE_DIR = "Archived novels"
 TRASH_DIR = "Deleted novels"
 CHAPTER_KINDS = ("front", "chapter", "back")
 CHAPTER_STATUSES = ("idea", "draft", "revised", "final")
+# Common paperback trim sizes (width × height in inches) that KDP, IngramSpark and Lulu all print.
+TRIM_SIZES = {"5x8": (5.0, 8.0), "5.25x8": (5.25, 8.0), "5.5x8.5": (5.5, 8.5), "6x9": (6.0, 9.0)}
 COVER_NAMES = ("cover.jpg", "cover.jpeg", "cover.png")
 # Pictures every ebook store and reader accepts (EPUB core media types).
 IMAGE_TYPES = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".gif": "image/gif"}
@@ -156,6 +158,7 @@ class Metadata:
     identifier: str = field(default_factory=lambda: f"urn:uuid:{uuid.uuid4()}")
     number_chapters: bool = True
     target_words: int = 80000
+    trim_size: str = "6x9"  # printed page, in inches: the PDF and print HTML exports
     picture_size: int = 1600  # long side, in px, pictures are shrunk to when added (0 = keep)
 
     @classmethod
@@ -173,6 +176,8 @@ class Metadata:
                 changes[f.name] = convert_field(getattr(self, f.name), data[f.name])
             except ValueError as e:
                 raise ProjectError(f"Invalid {f.name}: {e}") from None
+        if changes.get("trim_size", self.trim_size) not in TRIM_SIZES:
+            raise ProjectError(f"Invalid trim_size: choose one of {', '.join(TRIM_SIZES)}")
         for key, value in changes.items():
             setattr(self, key, value)
 

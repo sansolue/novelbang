@@ -16,11 +16,11 @@ import zipfile
 from pathlib import Path
 from urllib.parse import unquote
 
-from ..project import IMAGE_TYPES, Project, slugify
+from ..project import IMAGE_TYPES, TRIM_SIZES, Project, slugify
 from .render import BOOK_CSS, RenderedChapter, asset_href, esc, render_chapters
 
 PRINT_CSS = """
-@page { size: 6in 9in; margin: 0.75in 0.7in; }
+@page { size: 6in 9in; margin: 0.75in 0.7in; }  /* the trim size from Book details replaces 6in 9in */
 @media screen { body { max-width: 38em; margin: 2em auto; padding: 0 1em; } }
 @media print { .page { break-before: page; } a { color: inherit; text-decoration: none; } }
 .toc ol { list-style: none; padding: 0; } .toc li { margin: 0.3em 0; }
@@ -83,7 +83,9 @@ def build_manuscript_html(project: Project, out_dir: Path | None = None) -> Path
             f'<section class="page" id="ch{i}">\n{rc.heading_html(m.number_chapters)}\n{rc.body}\n</section>'
         )
     out = out_dir / f"{_slug(project)}.html"
-    out.write_text(_html_page(m.title, m.language, BOOK_CSS + PRINT_CSS, "\n".join(parts)), "utf-8")
+    width, height = TRIM_SIZES.get(m.trim_size, TRIM_SIZES["6x9"])
+    css = BOOK_CSS + PRINT_CSS.replace("size: 6in 9in", f"size: {width:g}in {height:g}in")
+    out.write_text(_html_page(m.title, m.language, css, "\n".join(parts)), "utf-8")
     return out
 
 
