@@ -19,7 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from . import __version__, config, prompts
+from . import __version__, comments, config, prompts
 from .export import EXPORTERS
 from .export.render import BOOK_CSS, RenderedChapter, render_markdown
 from .history import HistoryTracker, ProjectHistory, git_available, word_diff
@@ -96,6 +96,12 @@ class ReplaceRequest(BaseModel):
     match_case: bool = False
     whole_word: bool = False
     docs: list[DocRef] | None = None  # None: every chapter and note
+
+
+class ResolveComment(BaseModel):
+    file: str
+    index: int  # the comment's place among the chapter's comments
+    raw: str  # its markup, checked before it's taken out
 
 
 class UpdatePrefs(BaseModel):
@@ -436,6 +442,29 @@ def create_app(
             result = replace_in(p, pat, body.replacement, only)
             log.info("Replaced %d matches in %d documents of %s", result["replaced"], len(result["changed"]), pid)
             return {**result, "project": summary(p)}
+
+    # ---- comments ------------------------------------------------------------
+    # Like search, comments are the writing's own words and are never logged.
+
+    @app.get("/api/projects/{pid}/comments")
+    def list_comments(pid: str):
+        p = ws.get(pid)
+        docs = []
+        for c in p.chapters:
+            if not p.is_missing(c.file) and (found := comments.find(p.read_chapter(c.file))):
+                docs.append({"name": c.file, "title": c.title, "comments": found})
+        return {"total": sum(len(d["comments"]) for d in docs), "docs": docs}
+
+    @app.post("/api/projects/{pid}/comments/resolve")
+    def resolve_comment(pid: str, body: ResolveComment):
+        with ws.edit(pid) as p:
+            try:
+                text = comments.resolve(p.read_chapter(body.file), body.index, body.raw)
+            except ValueError as e:
+                raise HTTPException(409, str(e)) from None
+            p.write_chapter(body.file, text)
+            log.info("Resolved a comment in %s/%s", pid, body.file)
+            return summary(p)
 
     # ---- cover -------------------------------------------------------------
 

@@ -32,6 +32,8 @@ from urllib.parse import unquote
 
 import tomli_w
 
+from . import comments
+
 PROJECT_FILE = "novel.toml"
 ARCHIVE_DIR = "Archived novels"
 TRASH_DIR = "Deleted novels"
@@ -84,7 +86,7 @@ def slugify(text: str, fallback: str = "untitled") -> str:
 
 
 def count_words(text: str) -> int:
-    return len(_WORD.findall(_MD_IMAGE.sub(" ", text)))
+    return len(_WORD.findall(_MD_IMAGE.sub(" ", comments.strip(text))))
 
 
 def image_refs(text: str) -> list[str]:
@@ -115,6 +117,7 @@ def convert_field(current: object, value: object) -> object:
 def fingerprint(text: str) -> dict:
     """A compact record of a chapter's paragraphs, to tell later how much it has changed."""
     paras: dict[str, int] = {}
+    text = comments.strip(text)  # adding or resolving a comment doesn't change the story
     for p in _PARA_SPLIT.split(text):
         if p := " ".join(p.split()):
             key = hashlib.sha1(p.encode()).hexdigest()[:12]
@@ -361,7 +364,8 @@ class Project:
         stats = {}
         for c in self.chapters:
             text = "" if self.is_missing(c.file) else self.read_chapter(c.file)
-            stats[c.file] = {"words": count_words(text), "synopsis_state": self.synopsis_state(c, text, fps)}
+            stats[c.file] = {"words": count_words(text), "synopsis_state": self.synopsis_state(c, text, fps),
+                             "comments": comments.count(text)}
         return stats
 
     def is_missing(self, file: str) -> bool:
@@ -514,6 +518,18 @@ class Project:
                 add("warn", f"“{c.title}” is empty.")
             elif c.status in ("idea", "draft"):
                 add("info", f"“{c.title}” is still marked {c.status}.")
+        noted = 0
+        for c in self.chapters:
+            if self.is_missing(c.file):
+                continue
+            text = self.read_chapter(c.file)
+            noted += comments.count(text)
+            if comments.unclosed(text):
+                add("warn", f"“{c.title}” has a comment that isn't finished: a {{>> without its <<}}, or a "
+                    "{== without its ==}. Its text would print in the book.")
+        if noted:
+            add("info", f"{noted} {'comment is' if noted == 1 else 'comments are'} in the text. Comments are "
+                "left out of every export.")
         images: dict[Path, int] = {}
         for c in self.chapters:
             if self.is_missing(c.file):

@@ -16,6 +16,7 @@ import zipfile
 from pathlib import Path
 from urllib.parse import unquote
 
+from .. import comments
 from ..project import IMAGE_TYPES, TRIM_SIZES, Project, slugify
 from .render import BOOK_CSS, RenderedChapter, asset_href, esc, render_chapters
 
@@ -155,7 +156,7 @@ def build_serial_pack(project: Project, out_dir: Path | None = None) -> Path:
         stem = f"{i:02d}-{slugify(rc.chapter.title, 'chapter')}"
         title = rc.toc_title(m.number_chapters)
         (pack / f"{stem}.html").write_text(f"<h1>{esc(title)}</h1>\n{rc.body}\n", "utf-8")
-        text = project.read_chapter(rc.chapter.file).strip().replace("../assets/", "assets/")
+        text = comments.strip(project.read_chapter(rc.chapter.file)).strip().replace("../assets/", "assets/")
         (pack / f"{stem}.md").write_text(f"# {title}\n\n{text}\n", "utf-8")
     readme = (
         f"{m.title} — serial pack\n\n"
@@ -192,7 +193,7 @@ def build_markdown(project: Project, out_dir: Path | None = None) -> Path:
     for ch, num in project.numbered():
         title = f"{num}. {ch.title}" if (m.number_chapters and num) else ch.title
         attrs = "" if ch.kind == "chapter" else " {.unnumbered}"
-        body.append(f"# {title}{attrs}\n\n{project.read_chapter(ch.file).strip()}\n")
+        body.append(f"# {title}{attrs}\n\n{comments.strip(project.read_chapter(ch.file)).strip()}\n")
     out = out_dir / f"{_slug(project)}.md"
     out.write_text("\n".join(head) + "\n".join(body), "utf-8")
     return out

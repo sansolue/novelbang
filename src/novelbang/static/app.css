@@ -12,6 +12,7 @@
   --danger: #b3322a;
   --ok: #3d7a4a;
   --warn: #b7791f;
+  --note: #3b78c0;
   --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
   --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   --radius: 8px;
@@ -22,14 +23,14 @@
   :root:not([data-theme="light"]) {
     --bg: #1a1917; --panel: #201f1c; --paper: #242320; --fg: #e8e3da; --muted: #8f887c;
     --line: #36332e; --accent: #d9895d; --accent-fg: #1a1917; --hover: #2c2a26; --sel: #3a2e25;
-    --danger: #e0645b; --ok: #6cbf7e; --warn: #e0b060;
+    --danger: #e0645b; --ok: #6cbf7e; --warn: #e0b060; --note: #6fa8e6;
     color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
   --bg: #1a1917; --panel: #201f1c; --paper: #242320; --fg: #e8e3da; --muted: #8f887c;
   --line: #36332e; --accent: #d9895d; --accent-fg: #1a1917; --hover: #2c2a26; --sel: #3a2e25;
-  --danger: #e0645b; --ok: #6cbf7e; --warn: #e0b060;
+  --danger: #e0645b; --ok: #6cbf7e; --warn: #e0b060; --note: #6fa8e6;
   color-scheme: dark;
 }
 
@@ -202,6 +203,18 @@ body.focus .doc-head { opacity: .25; transition: opacity .3s; } body.focus .doc-
 }
 .find-marks mark { color: transparent; background: color-mix(in srgb, var(--warn) 32%, transparent); border-radius: 2px; }
 .find-marks mark.current { background: color-mix(in srgb, var(--accent) 55%, transparent); }
+/* Comments (see renderComments): the layer draws the text, so only colours change here,
+   never anything that would change a letter's width. */
+.prose-wrap.inked .prose, .prose-wrap.inked .prose::selection { color: transparent; }
+.prose-wrap.inked .prose { caret-color: var(--fg); }
+.prose-wrap.inked .comment-marks { color: var(--fg); }
+.comment-marks .c-passage { background: color-mix(in srgb, var(--note) 10%, transparent);
+  text-decoration: underline 2px color-mix(in srgb, var(--note) 60%, transparent); text-underline-offset: 4px; }
+.comment-marks .c-note { background: color-mix(in srgb, var(--note) 14%, transparent); border-radius: 4px; }
+.comment-marks .c-text { color: var(--note); }
+.comment-marks .c-mark { color: color-mix(in srgb, var(--note) 35%, transparent); }
+.comment-marks .current .c-note { background: color-mix(in srgb, var(--note) 30%, transparent); }
+.comment-marks .current { outline: 2px solid color-mix(in srgb, var(--note) 60%, transparent); outline-offset: 2px; border-radius: 3px; }
 .synopsis.found { outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent); }
 
 /* ---------- Book search ---------- */
@@ -223,6 +236,18 @@ body.focus .doc-head { opacity: .25; transition: opacity .3s; } body.focus .doc-
 .bs-hit mark { background: color-mix(in srgb, var(--warn) 35%, transparent); color: inherit; border-radius: 2px; }
 .bs-hit .field { font: 10px var(--sans); text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-right: 4px; }
 .bs-more { padding: 2px 6px 0 24px; font-size: 11px; }
+/* ---------- Comments list ---------- */
+.badge { margin-left: 5px; font-size: 11px; padding: 0 6px; border-radius: 9px; background: color-mix(in srgb, var(--note) 22%, transparent); }
+.badge:empty { display: none; }
+.cm-help { font-size: 12px; margin: 0 2px 6px; line-height: 1.4; }
+.cm-item { display: flex; align-items: flex-start; gap: 2px; }
+.cm-item .bs-hit { flex: 1; padding-left: 12px; }
+.cm-passage { color: var(--muted); font-style: italic; border-left: 2px solid color-mix(in srgb, var(--note) 55%, transparent);
+  padding-left: 6px; margin-bottom: 2px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.cm-note { font-family: var(--sans); font-size: 12.5px; }
+.cm-note:empty::before { content: "(highlight, no comment)"; color: var(--muted); }
+.cm-resolve { flex: none; margin-top: 2px; }
+.chapter-list li .cm-flag { color: var(--note); font-size: 11px; }
 .empty { display: grid; place-items: center; height: 100%; color: var(--muted); }
 
 .book-form h2 { font: 600 28px var(--serif); margin: 0 0 4px; }

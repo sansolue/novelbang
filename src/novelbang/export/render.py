@@ -12,6 +12,7 @@ from urllib.parse import quote
 
 import markdown
 
+from .. import comments
 from ..project import Chapter, Project
 
 _ENTITY = re.compile(r"&([A-Za-z][A-Za-z0-9]*);")
@@ -38,7 +39,7 @@ def _numeric_entities(text: str) -> str:
 
 def md_to_xhtml(text: str) -> str:
     out = markdown.markdown(
-        text,
+        comments.strip(text),
         extensions=["smarty", "footnotes", "sane_lists"],
         output_format="xhtml",
     )

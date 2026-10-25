@@ -3,10 +3,14 @@
 Local models have small context windows, so everything is trimmed to a
 character budget (LLMSettings.context_chars): project notes get roughly a
 third, the manuscript text near the cursor gets the rest.
+
+The author's comments ({>>…<<}) are taken out of the text the model writes from, so it
+neither copies the markup nor treats a note as story; chat sees them, to talk them over.
 """
 
 from __future__ import annotations
 
+from . import comments
 from .project import Project
 
 SYSTEM = (
@@ -88,7 +92,7 @@ def previous_ending(project: Project, file: str, limit: int = 1500) -> tuple[str
     for ch in reversed(project.chapters[: files.index(file)]):
         if project.is_missing(ch.file):
             continue
-        text = project.read_chapter(ch.file).strip()
+        text = comments.strip(project.read_chapter(ch.file)).strip()
         if text:
             return ch.title, _tail(text, limit)
     return None
@@ -110,6 +114,7 @@ def _context_block(project: Project, file: str | None, budget: int) -> str:
 def continue_messages(
     project: Project, file: str, before: str, after: str, instruction: str, budget: int
 ) -> list[dict]:
+    before, after = comments.strip(before), comments.strip(after)
     ctx = _context_block(project, file, budget)
     # Near the start of a chapter, show how the previous one ended so the story flows on.
     if len(before) < 3000 and (prev := previous_ending(project, file, min(1500, budget // 8))):
@@ -128,6 +133,7 @@ def continue_messages(
 def rewrite_messages(
     project: Project, file: str, selection: str, before: str, after: str, instruction: str, budget: int
 ) -> list[dict]:
+    selection, before, after = comments.strip(selection), comments.strip(before), comments.strip(after)
     ctx = _context_block(project, file, budget // 2)
     task = instruction.strip() or "Improve the prose: tighten it, sharpen imagery, keep the meaning."
     user = (
@@ -145,6 +151,7 @@ def summarize_messages(
 ) -> list[dict]:
     """Messages asking for a synopsis that later chapters can rely on for continuity."""
     ch = project.chapter(file)
+    text = comments.strip(text)
     so_far = story_so_far(project, file, budget // 5, overrides)
     user = f"Novel: “{project.meta.title}”\n\n"
     if so_far:

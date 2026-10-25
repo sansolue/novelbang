@@ -2,7 +2,8 @@
 
 The text is split into chapters at its headings: Word's heading styles, Markdown's
 #-headings, or, failing those, lines such as "Chapter 3" or "Prologue". Italic, bold,
-scene breaks, footnotes and pictures come across; nothing else in the text is dropped.
+scene breaks, footnotes, pictures and Word's comments come across; nothing else in the
+text is dropped.
 Prologues, dedications and the like become front matter; epilogues, afterwords and
 acknowledgements become back matter.
 
@@ -19,6 +20,7 @@ from io import BytesIO
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
+from . import comments
 from .project import IMAGE_TYPES, Project, ProjectError, Workspace, count_words
 
 IMPORT_TYPES = (".docx", ".md", ".markdown", ".txt")
@@ -137,6 +139,15 @@ def read_docx(data: bytes) -> Draft:
         for r in rx.iter(f"{REL}Relationship"):
             rels[r.get("Id", "")] = r.get("Target", "")
 
+    # Word's comments, by id, as one line of plain text each.
+    notes: dict[str, str] = {}
+    if (cx := xml("word/comments.xml")) is not None:
+        for c in cx.iter(f"{W}comment"):
+            paras = ("".join(t.text or "" for t in p.iter(f"{W}t")).strip() for p in c.iter(f"{W}p"))
+            if text := " ".join(t for t in paras if t):
+                notes[c.get(f"{W}id", "")] = " ".join(text.replace("<<}", "<< }").split())
+    placed: set[str] = set()  # comments already in the text
+
     draft = Draft()
     if (core := xml("docProps/core.xml")) is not None and (t := core.find(f"{DC}title")) is not None:
         draft.title = (t.text or "").strip()
@@ -169,10 +180,14 @@ def read_docx(data: bytes) -> Draft:
                                 pieces.append(("\0br", False, False))
                         elif part.tag == f"{W}footnoteReference":
                             pieces.append((f"\0fn:{part.get(f'{W}id')}", False, False))
+                        elif part.tag == f"{W}commentReference":
+                            pieces.append((f"\0cr:{part.get(f'{W}id')}", False, False))
                         elif part.tag in (f"{W}drawing", f"{W}pict"):
                             for blip in part.iter(f"{A}blip"):
                                 if target := rels.get(blip.get(f"{R}embed", "")):
                                     pieces.append((f"\0img:{target}", False, False))
+                elif tag in (f"{W}commentRangeStart", f"{W}commentRangeEnd"):
+                    pieces.append((f"\0c{'s' if tag.endswith('Start') else 'e'}:{child.get(f'{W}id')}", False, False))
                 elif tag in (f"{W}hyperlink", f"{W}ins", f"{W}smartTag", f"{W}sdt", f"{W}sdtContent", f"{W}fldSimple"):
                     walk(child)
                 elif tag == f"{W}pPr":
@@ -181,6 +196,12 @@ def read_docx(data: bytes) -> Draft:
 
         walk(p)
         out, group, fmt = [], "", (False, False)
+        open_id = None  # the comment whose passage this paragraph is in
+        waiting: list[str] = []  # comments that end inside that passage, placed after it
+
+        def note(cid: str) -> str:
+            placed.add(cid)
+            return f"{{>>{notes[cid]}<<}}"
 
         def flush() -> None:
             nonlocal group
@@ -200,6 +221,23 @@ def read_docx(data: bytes) -> Draft:
                     out.append("  \n")
                 elif text.startswith("\0fn:"):
                     out.append(f"[^{text[4:]}]")
+                elif text.startswith("\0c"):
+                    # A passage holds one comment: one that ends inside another's passage
+                    # goes just after it, and one on several paragraphs marks only the first.
+                    cid = text[4:]
+                    if cid not in notes or cid in placed:
+                        continue
+                    if text[2] == "s" and open_id is None:
+                        open_id = cid
+                        out.append("{==")
+                    elif text[2] in "er" and cid == open_id:
+                        out.append("==}" + note(cid) + "".join(map(note, waiting)))
+                        open_id, waiting = None, []
+                    elif text[2] in "er" and open_id is not None:
+                        if cid not in waiting:
+                            waiting.append(cid)
+                    elif text[2] in "er":
+                        out.append(note(cid))
                 else:
                     target = posixpath.normpath(posixpath.join("word", text[5:]))
                     ext = Path(target).suffix.lower()
@@ -213,6 +251,8 @@ def read_docx(data: bytes) -> Draft:
                 fmt = (bold, ital)
             group += text
         flush()
+        if open_id is not None:
+            out.append("==}" + note(open_id) + "".join(map(note, waiting)))
         return "".join(out), page_break
 
     body = doc.find(f"{W}body")
@@ -225,7 +265,7 @@ def read_docx(data: bytes) -> Draft:
                 kind, level = "heading", n + 1
         md, _ = runs_to_md(p, sid)
         if kind in ("title", "heading"):
-            plain = re.sub(r"\\(.)", r"\1", md).replace("*", "").strip()
+            plain = re.sub(r"\\(.)", r"\1", comments.strip(md)).replace("*", "").strip()
             if plain:
                 draft.blocks.append(Block(kind, plain, level or 0))
         elif md.strip():

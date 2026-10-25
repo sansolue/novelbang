@@ -71,7 +71,24 @@ function el(tag, attrs = {}, ...children) {
   return node;
 }
 
-const countWords = (s) => (s.replace(/!\[[^\]]*\]\([^)]*\)/g, " ").match(/[\p{L}\p{N}'’-]+/gu) || []).length;
+// Comments are written in the text as CriticMarkup, {==passage==}{>>comment<<} or {>>comment<<}
+// at a point, and parsed exactly as comments.py does. They're never in the book or the word count.
+const C_PASSAGE = String.raw`(?:(?!==\}|\{==)[\s\S])*`, C_NOTE = String.raw`(?:(?!<<\})[\s\S])*`;
+const COMMENT_RE = new RegExp(String.raw`\{==(${C_PASSAGE})==\}[ \t]*\{>>(${C_NOTE})<<\}|\{>>(${C_NOTE})<<\}|\{==(${C_PASSAGE})==\}`, "dg");
+const COMMENT_MARK = /\{==|==\}|\{>>|<<\}/;
+
+function findComments(text) {
+  if (!text.includes("{")) return [];
+  return [...text.matchAll(COMMENT_RE)].map((m) => ({
+    start: m.index, end: m.index + m[0].length, raw: m[0],
+    passage: m.indices[1] || m.indices[4] || null, // [start, end] of the passage, if it has one
+    note: m.indices[2] || m.indices[3] || null, // [start, end] of the comment, if it has one
+    passageText: m[1] ?? m[4] ?? "", noteText: (m[2] ?? m[3] ?? "").trim(),
+  }));
+}
+
+const stripComments = (s) => (s.includes("{") ? s.replace(COMMENT_RE, (_, a, _n, _l, b) => stripComments(a ?? b ?? " ")) : s);
+const countWords = (s) => (stripComments(s).replace(/!\[[^\]]*\]\([^)]*\)/g, " ").match(/[\p{L}\p{N}'’-]+/gu) || []).length;
 const fmt = (n) => n.toLocaleString();
 const pid = () => enc(state.project.id);
 
@@ -101,6 +118,12 @@ function ask(title, fields) {
       return el("label", {}, f.label, input);
     })
   );
+  // Enter means OK: left to the form, it would press the first button, Cancel.
+  box.querySelectorAll("input").forEach((input) => input.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" || e.isComposing) return;
+    e.preventDefault();
+    if (dlg.querySelector("form").reportValidity()) dlg.close("ok");
+  }));
   dlg.showModal();
   box.querySelector("input,select")?.select?.();
   return new Promise((resolve) => {
@@ -335,6 +358,7 @@ function renderProject() {
         ["stale", "missing"].includes(c.synopsis_state)
           ? el("span", { class: "syn-flag", title: c.synopsis_state === "stale" ? "Synopsis is out of date" : "No synopsis yet" }, "↻")
           : null,
+        c.comments ? el("span", { class: "cm-flag", title: `${c.comments} ${c.comments === 1 ? "comment" : "comments"}` }, "💬") : null,
         el("span", { class: "wc", title: c.missing ? "File is missing from chapters/" : null }, c.missing ? "missing" : c.words ? fmt(c.words) : ""),
         el("span", { class: "dot " + c.status, title: c.status }));
       li.dataset.file = c.file;
@@ -347,6 +371,7 @@ function renderProject() {
         "🗒 ", name.replace(/\.md$/, "")))
   );
   $(".book-item").classList.toggle("active", isActive("book"));
+  $("#comments-count").textContent = p.chapters.reduce((n, c) => n + (c.comments || 0), 0) || "";
   const needing = p.chapters.filter((c) => ["stale", "missing"].includes(c.synopsis_state)).length;
   $("#synopses-count").textContent = needing ? `${needing} to update` : "";
   $("#synopses-btn").classList.toggle("attention", needing > 0);
@@ -385,6 +410,7 @@ async function openView(type, id) {
     $("#doc-title").readOnly = !chapter;
     $("#chapter-meta").querySelectorAll("select").forEach((s) => (s.hidden = !chapter));
     $("#doc-synopsis").hidden = !chapter;
+    $("#comment-btn").hidden = !chapter;
     $(".history-btn").hidden = !p.history;
     if (chapter) {
       $("#doc-kind").value = chapter.kind;
@@ -401,8 +427,11 @@ async function openView(type, id) {
     requestAnimationFrame(() => { autogrow(ta); autogrow($("#doc-synopsis")); });
     $("#editor-pane").scrollTop = 0;
     if (!text) ta.focus();
+    comments.current = -1;
+    renderComments();
     if (bsearch.jump) requestAnimationFrame(applyJump);
     else refreshFind({ from: 0, scroll: false });
+    if (cpanel.jump) requestAnimationFrame(applyCommentJump);
   } else {
     $("#empty-view").hidden = false;
   }
@@ -449,6 +478,7 @@ async function doFlushSave() {
       if (ch) {
         state.project.words += countWords(text) - ch.words;
         ch.words = countWords(text);
+        ch.comments = findComments(text).length;
         renderProject();
       }
     }
@@ -856,7 +886,7 @@ function replaceRange(ta, s, e, text) {
   const back = document.activeElement;
   ta.focus({ preventScroll: true });
   ta.setSelectionRange(s, e);
-  if (!document.execCommand("insertText", false, text)) {
+  if (!document.execCommand(text ? "insertText" : "delete", false, text)) {
     ta.setRangeText(text, s, e, "end");
     ta.dispatchEvent(new Event("input"));
   }
@@ -895,8 +925,7 @@ const docKey = (d) => `${d.type}/${d.name}`;
 function openBookSearch(query) {
   if (!state.project) return;
   document.body.classList.remove("focus");
-  $("#side-main").hidden = true;
-  $("#search-panel").hidden = false;
+  showSide("search");
   const input = $("#bs-query");
   if (query != null) input.value = query;
   input.focus();
@@ -905,8 +934,14 @@ function openBookSearch(query) {
 }
 
 function closeBookSearch() {
-  $("#search-panel").hidden = true;
-  $("#side-main").hidden = false;
+  showSide("main");
+}
+
+// The sidebar shows the chapters, the book search or the comments.
+function showSide(which) {
+  $("#side-main").hidden = which !== "main";
+  $("#search-panel").hidden = which !== "search";
+  $("#comments-panel").hidden = which !== "comments";
 }
 
 function scheduleBookSearch() {
@@ -1020,6 +1055,192 @@ async function replaceInBook() {
   toast(`Replaced ${fmt(res.replaced)} ${res.replaced === 1 ? "match" : "matches"} in ${res.changed.length} `
     + `${res.changed.length === 1 ? "document" : "documents"}`);
   await runBookSearch();
+}
+
+// ---------------------------------------------------------------- comments
+
+const comments = { list: [], current: -1 }; // in the open chapter
+const cpanel = { result: null, timer: null, seq: 0, jump: null }; // the list of every comment
+
+// In a chapter with comments, the layer behind the textarea draws the text, and the
+// textarea's own text is transparent (its caret, selection and spelling marks still
+// show). That lets a comment look like one: its note in the comment colour on a chip,
+// its {== ==} {>> <<} marks faint, its passage underlined. Same font, so nothing moves.
+function renderComments() {
+  const layer = $("#comment-marks"), text = $("#doc-text").value;
+  comments.list = state.view?.type === "chapter" ? findComments(text) : [];
+  $("#prose-wrap").classList.toggle("inked", comments.list.length > 0);
+  if (!comments.list.length) return layer.replaceChildren();
+  const part = (cls, s, e) => (e > s ? el("span", { class: cls }, text.slice(s, e)) : null);
+  // A note with its marks: "{>>", the note, "<<}" (and for a passage, the "==}" before them).
+  const note = (s, e, [ns, ne]) => el("span", { class: "c-note" }, part("c-mark", s, ns), part("c-text", ns, ne), part("c-mark", ne, e));
+  const parts = [];
+  let last = 0;
+  comments.list.forEach((c, i) => {
+    let pieces;
+    if (c.passage && c.note) {
+      pieces = [part("c-mark", c.start, c.passage[0]), part("c-passage", ...c.passage), note(c.passage[1], c.end, c.note)];
+    } else if (c.passage) { // a highlight with no comment
+      pieces = [part("c-mark", c.start, c.passage[0]), part("c-passage", ...c.passage), part("c-mark", c.passage[1], c.end)];
+    } else {
+      pieces = [note(c.start, c.end, c.note)];
+    }
+    parts.push(text.slice(last, c.start), el("span", { class: i === comments.current ? "current" : "" }, ...pieces));
+    last = c.end;
+  });
+  parts.push(text.slice(last) + "\u200b"); // a final newline still takes a line, as in the textarea
+  layer.replaceChildren(...parts);
+}
+
+// The layer must follow every change to the text, typed or not (opening a chapter,
+// restoring a version, the co-writer's insert…), or it would show stale text.
+function followText(ta) {
+  const value = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value");
+  let queued = false;
+  const redraw = () => {
+    if (queued) return;
+    queued = true;
+    requestAnimationFrame(() => { queued = false; renderComments(); });
+  };
+  Object.defineProperty(ta, "value", { get() { return value.get.call(this); }, set(v) { value.set.call(this, v); redraw(); } });
+  const setRangeText = ta.setRangeText;
+  ta.setRangeText = function (...args) { setRangeText.apply(this, args); redraw(); };
+}
+
+const shorten = (t, n = 60) => {
+  t = t.replace(/\s+/g, " ").trim();
+  return t.length > n ? t.slice(0, n).replace(/\s+\S*$/, "") + "…" : t;
+};
+const cleanNote = (t) => t.replace(/\s+/g, " ").trim().replaceAll("<<}", "<< }");
+
+// Comments on the selection, or at the cursor; with the cursor in a comment, edits it.
+async function addComment() {
+  if (state.view?.type !== "chapter") return toast("Open a chapter to comment on it");
+  const ta = $("#doc-text"), text = ta.value;
+  let s = ta.selectionStart, e = ta.selectionEnd;
+  while (s < e && /\s/.test(text[s])) s++;
+  while (e > s && /\s/.test(text[e - 1])) e--;
+  const list = findComments(text);
+  const editing = list.find((c) => c.start <= s && e <= c.end && !(s === e && (s === c.start || s === c.end)));
+  if (editing) {
+    const r = await ask("Edit comment", [{ name: "note", required: true, value: editing.noteText,
+      label: editing.passageText ? `On “${shorten(editing.passageText)}”` : "Comment" }]);
+    if (!r || !cleanNote(r.note)) return;
+    const note = cleanNote(r.note);
+    // A highlight with no comment yet gets one after it.
+    if (editing.note) replaceRange(ta, ...editing.note, note);
+    else replaceRange(ta, editing.end, editing.end, `{>>${note}<<}`);
+    ta.focus();
+    return;
+  }
+  if (list.some((c) => c.start < e && s < c.end) || COMMENT_MARK.test(text.slice(s, e))) {
+    return toast("The selection runs into another comment. Select text outside it, or click inside it to edit it.");
+  }
+  const passage = text.slice(s, e);
+  const r = await ask("Add comment", [{ name: "note", required: true, placeholder: "e.g. Check the tide times",
+    label: passage ? `On “${shorten(passage)}”` : "At the cursor" }]);
+  if (!r || !cleanNote(r.note)) return;
+  const insert = passage ? `{==${passage}==}{>>${cleanNote(r.note)}<<}` : `{>>${cleanNote(r.note)}<<}`;
+  replaceRange(ta, s, e, insert);
+  ta.focus();
+  ta.setSelectionRange(s + insert.length, s + insert.length);
+}
+
+async function openComments() {
+  if (!state.project) return;
+  document.body.classList.remove("focus");
+  showSide("comments");
+  await loadComments();
+}
+
+function closeComments() {
+  showSide("main");
+}
+
+// Refreshes the list while it's open, once typing pauses (after the text is saved).
+function scheduleComments() {
+  if ($("#comments-panel").hidden) return;
+  clearTimeout(cpanel.timer);
+  cpanel.timer = setTimeout(loadComments, 1000);
+}
+
+async function loadComments() {
+  clearTimeout(cpanel.timer);
+  const seq = ++cpanel.seq;
+  await flushSave();
+  let r;
+  try { r = await api("GET", `/api/projects/${pid()}/comments`); } catch (e) { r = { error: e.message }; }
+  if (seq !== cpanel.seq) return; // a newer load has started
+  cpanel.result = r;
+  renderCommentList();
+}
+
+function renderCommentList() {
+  const r = cpanel.result, list = $("#cm-list");
+  const say = (msg) => list.replaceChildren(el("p", { class: "muted bs-summary" }, msg));
+  if (!r) return list.replaceChildren();
+  if (r.error) return say(r.error);
+  if (!r.total) return say("No comments in the book.");
+  list.replaceChildren(...r.docs.map((d) => el("li", { class: "bs-doc" },
+    el("div", { class: "bs-doc-head" }, el("span", { class: "name" }, d.title), el("span", { class: "count" }, fmt(d.comments.length))),
+    ...d.comments.map((c, i) => el("div", { class: "cm-item" },
+      el("button", { type: "button", class: "bs-hit", title: "Show it in the chapter", onclick: () => jumpToComment(d.name, i, c.raw) },
+        c.passage ? el("span", { class: "cm-passage" }, c.passage) : null,
+        el("span", { class: "cm-note" }, c.note)),
+      el("button", { type: "button", class: "ghost small cm-resolve", title: "Resolve: take the comment out and keep the text",
+        onclick: () => resolveComment(d.name, i, c.raw).catch((e) => toast(e.message, true)) }, "✓"))))));
+}
+
+// The comment's place in the open chapter: the list can be a moment behind the typing.
+function commentIndex(index, raw) {
+  const list = findComments($("#doc-text").value);
+  return list[index]?.raw === raw ? index : list.findIndex((c) => c.raw === raw);
+}
+
+function jumpToComment(file, index, raw) {
+  cpanel.jump = { file, index, raw };
+  if (isActive("chapter", file)) applyCommentJump();
+  else go("chapter", file); // openView applies the jump once the text is loaded
+}
+
+function applyCommentJump() {
+  const j = cpanel.jump;
+  cpanel.jump = null;
+  if (!j || !isActive("chapter", j.file)) return;
+  closePreview();
+  comments.current = commentIndex(j.index, j.raw);
+  renderComments();
+  const c = comments.list[comments.current];
+  if (!c) {
+    toast("That comment has changed. The list is up to date now.");
+    return loadComments();
+  }
+  const ta = $("#doc-text");
+  ta.focus({ preventScroll: true });
+  ta.setSelectionRange(...(c.note || c.passage));
+  $("#comment-marks .current")?.scrollIntoView({ block: "center" });
+}
+
+// Takes the comment out, keeping its passage. In the open chapter it's an edit ⌘Z can undo.
+async function resolveComment(file, index, raw) {
+  if (isActive("chapter", file)) {
+    const ta = $("#doc-text"), text = ta.value;
+    const c = findComments(text)[commentIndex(index, raw)];
+    if (!c) throw new Error("That comment has changed since the list was shown");
+    let s = c.start;
+    // As comments.py does: "a word {>>note<<} more" becomes "a word more".
+    if (!c.passage && /^([\s.,;:!?)\]”’"']|$)/.test(text.slice(c.end, c.end + 1))) {
+      while (s > 0 && /[ \t]/.test(text[s - 1])) s--;
+    }
+    const top = $("#editor-pane").scrollTop;
+    replaceRange(ta, s, c.end, c.passage ? stripComments(text.slice(...c.passage)) : "");
+    $("#editor-pane").scrollTop = top;
+  } else {
+    await flushSave();
+    state.project = await api("POST", `/api/projects/${pid()}/comments/resolve`, { file, index, raw });
+    renderProject();
+  }
+  await loadComments();
 }
 
 // ---------------------------------------------------------------- chapters & notes
@@ -1605,6 +1826,9 @@ function wire() {
     "find-in-book": () => openBookSearch($("#find-input").value),
     "search-book": () => openBookSearch(),
     "search-close": closeBookSearch,
+    comments: () => openComments().catch((e) => toast(e.message, true)),
+    "comments-close": closeComments,
+    "add-comment": () => addComment().catch((e) => toast(e.message, true)),
     "bs-replace-all": () => replaceInBook().catch((e) => toast(e.message, true)),
     "reveal-log": () => desktop().reveal_log(),
     "update-later": () => {
@@ -1649,11 +1873,19 @@ function wire() {
   });
 
   const ta = $("#doc-text");
-  ta.addEventListener("input", () => { markDirty(); autogrow(ta); updateDocWords(); refreshFind({ scroll: false }); });
+  followText(ta);
+  ta.addEventListener("input", () => {
+    markDirty(); autogrow(ta); updateDocWords(); refreshFind({ scroll: false });
+    comments.current = -1;
+    renderComments();
+    scheduleComments();
+  });
   ta.addEventListener("keydown", (e) => {
     const mod = e.metaKey || e.ctrlKey;
     if (mod && e.key === "i") { e.preventDefault(); wrapSelection(ta, "*"); }
     if (mod && e.key === "b") { e.preventDefault(); wrapSelection(ta, "**"); }
+    // ⌥⌘M / Ctrl+Alt+M, as in Word and Google Docs; by key position, since ⌥M types µ on a Mac.
+    if (mod && e.altKey && e.code === "KeyM") { e.preventDefault(); addComment().catch((err) => toast(err.message, true)); }
   });
   const pictures = (dt) => [...(dt?.files || [])].filter((f) => f.type.startsWith("image/"));
   ta.addEventListener("paste", (e) => {
@@ -1730,6 +1962,7 @@ function wire() {
     if (e.key === "Escape" && document.querySelector("dialog[open]")) return; // the dialog closes itself
     if (e.key === "Escape" && $("#find-bar").contains(document.activeElement)) closeFind();
     else if (e.key === "Escape" && $("#search-panel").contains(document.activeElement)) closeBookSearch();
+    else if (e.key === "Escape" && $("#comments-panel").contains(document.activeElement)) closeComments();
     else if (e.key === "Escape" && !$("#doc-preview").hidden) closePreview();
     else if (e.key === "Escape" && document.body.classList.contains("focus")) document.body.classList.remove("focus");
   });

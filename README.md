@@ -8,6 +8,8 @@ language model running on your own machine, and export a store-ready ebook.
 - **Local AI co-writer** — continue from the cursor, rewrite a selection, summarize a
   chapter, or brainstorm in a chat. Works with any OpenAI-compatible server:
   Ollama, llama.cpp `llama-server`, LM Studio, vLLM.
+- **Comments** — notes to yourself on a passage ("check the tide times") that stay in
+  your draft and out of the book.
 - **Bring a draft in** — import a Word document, Markdown or plain text file; it's split
   into chapters at its headings.
 - **Publish** — EPUB 3 (passes EPUBCheck; accepted by KDP, Kobo, Apple Books, Google
@@ -174,7 +176,8 @@ longer skip that.
 the-salt-road/
   novel.toml            title, author, blurb, ISBN… and chapter order/status/synopses
   chapters/
-    001-chapter-one.md  prose only, Markdown (*italic*, **bold**, *** = scene break)
+    001-chapter-one.md  prose only, Markdown (*italic*, **bold**, *** = scene break,
+                        {>>comment<<} = a note to yourself, left out of the book)
     002-the-harbour.md
   notes/
     style.md            POV, tense, voice — the AI reads this on every request
@@ -218,7 +221,7 @@ Markdown file (`.md`) or a plain text file (`.txt`):
   `#` headings, or failing those, lines such as "Chapter 3" or "Prologue".
   "Chapter 3: The Harbour" becomes a chapter titled "The Harbour".
 - **Formatting:** italic, bold, scene breaks (`***`, `#`, `* * *`), footnotes and
-  pictures come across.
+  pictures come across, and so do Word's comments, as NovelBang comments.
 - **Front and back matter:** prologues and dedications become front matter;
   epilogues, afterwords and acknowledgements become back matter.
 - **Title page:** a title, subtitle and "by …" line before the first chapter fill in
@@ -296,6 +299,31 @@ Both treat straight and curly quotes as the same, so `don't` finds `don’t`. Th
 change picture file paths, so replacing a name can't break a picture, though alt text
 and captions are changed like any other text. **Whole word** skips matches inside longer
 words: `Tom` doesn't find `Tomorrow`.
+
+## Comments
+
+Select some text and press **⌥⌘M** (Ctrl+Alt+M), or click **Comment** above the
+chapter, to leave yourself a note on it. With nothing selected, the comment goes at the
+cursor. The passage is tinted in the editor. To change a comment, put the cursor in it
+and press ⌥⌘M again.
+
+**Comments** in the top bar lists every comment in the book, chapter by chapter. Click
+one to go to it. **✓** resolves it: the comment is taken out and its passage stays. In
+the chapter you're in, ⌘Z undoes that.
+
+Comments live in the chapter text, written in
+[CriticMarkup](https://github.com/CriticMarkup/CriticMarkup-toolkit), so they move with
+their passage as you edit and any text editor can see them:
+
+```
+Mara {==watched the ship==}{>>too passive?<<} come in.{>>Check the tide times<<}
+```
+
+They're left out of every export, the preview and the word count. The co-writer doesn't
+see them when it writes, so it won't copy them or take a note for part of the story.
+Brainstorm does see them, so you can talk a comment over. **Publish** lists how many
+are left, and warns about any whose markup was left unfinished, since that text would
+print.
 
 ## Chapter synopses (the co-writer's memory)
 
@@ -402,6 +430,7 @@ make log       # follow the debug log
 - `src/novelbang/export/` — the exporters: EPUB, web, Word (`docx.py`) and PDF (`pdf.py`,
   with fpdf2 and the bundled Crimson Text font, SIL Open Font License, in `export/fonts/`)
 - `src/novelbang/importer.py` — reads `.docx`, Markdown and text manuscripts
+- `src/novelbang/comments.py` — comments: finding them, and taking them out for the book
 - `src/novelbang/server.py` — FastAPI JSON API; `static/` — the UI (no build step)
 - `src/novelbang/desktop.py` — the desktop app (pywebview window around the server);
   `packaging/` — PyInstaller spec, build script and icon (`make_icon.py` draws it)
