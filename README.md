@@ -411,6 +411,8 @@ warnings and errors also print there.
 
 ## Development
 
+What's planned next is in [ROADMAP.md](ROADMAP.md).
+
 `make` lists the common tasks:
 
 ```sh
