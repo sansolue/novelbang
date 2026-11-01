@@ -215,7 +215,7 @@ function projectCard(p, open, actions = [], archived = false) {
 function openMenu(anchor, actions) {
   closeMenu();
   const menu = el("div", { class: "menu", role: "menu", id: "popup-menu" },
-    ...actions.map(([label, run, cls]) => el("button", {
+    ...actions.map(([label, run, cls]) => label === "-" ? el("hr") : el("button", {
       role: "menuitem", class: cls || "",
       onclick: () => { closeMenu(); Promise.resolve(run()).catch((e) => toast(e.message, true)); },
     }, label)));
@@ -371,7 +371,6 @@ function renderProject() {
         "🗒 ", name.replace(/\.md$/, "")))
   );
   $(".book-item").classList.toggle("active", isActive("book"));
-  $("#merge-btn").hidden = !isActive("chapter") || p.chapters.at(-1)?.file === state.view.id;
   $("#trash-btn").hidden = !p.trashed;
   $("#trash-count").textContent = p.trashed || "";
   $("#comments-count").textContent = p.chapters.reduce((n, c) => n + (c.comments || 0), 0) || "";
@@ -413,7 +412,7 @@ async function openView(type, id) {
     $("#doc-title").readOnly = !chapter;
     $("#chapter-meta").querySelectorAll("select").forEach((s) => (s.hidden = !chapter));
     $("#doc-synopsis").hidden = !chapter;
-    $("#comment-btn").hidden = $("#split-btn").hidden = !chapter;
+    $("#comment-btn").hidden = !chapter;
     $(".history-btn").hidden = !p.history;
     if (chapter) {
       $("#doc-kind").value = chapter.kind;
@@ -1260,6 +1259,23 @@ async function newChapter() {
   go("chapter", res.file);
 }
 
+// The everyday buttons stay in the toolbar; the occasional ones wait in this menu.
+function docMenu(anchor) {
+  const chs = state.project.chapters;
+  const i = state.view.type === "chapter" ? chs.findIndex((c) => c.file === state.view.id) : -1;
+  const next = i >= 0 ? chs[i + 1] : null;
+  openMenu(anchor, [
+    ["Add picture…", () => $("#picture-file").click()],
+    ...(i >= 0 ? [
+      ["-"],
+      ["Split at the cursor…", splitChapter],
+      ...(next ? [[`Merge with “${next.title}”`, mergeChapter]] : []),
+    ] : []),
+    ["-"],
+    [i >= 0 ? "Delete chapter…" : "Delete note…", deleteDoc, "danger"],
+  ]);
+}
+
 async function splitChapter() {
   const ta = $("#doc-text");
   const pos = ta.selectionStart;
@@ -1896,8 +1912,7 @@ function wire() {
     "new-note": newNote,
     "delete-doc": deleteDoc,
     trash: () => openTrash().catch((e) => toast(e.message, true)),
-    "split-chapter": () => splitChapter().catch((e) => toast(e.message, true)),
-    "merge-chapter": () => mergeChapter().catch((e) => toast(e.message, true)),
+    "doc-more": () => docMenu($('[data-action="doc-more"]')),
     synopses: () => openSynopses().catch((e) => toast(e.message, true)),
     "syn-generate": () => generateSynopses(),
     "syn-apply": () => applySynopses().catch((e) => toast(e.message, true)),

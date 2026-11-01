@@ -263,7 +263,7 @@ It imports back into NovelBang as the same book.
 
 ## Pictures
 
-Click **Picture…** above a chapter, or paste or drop an image into the text. The file
+Choose **⋯ → Add picture…** above a chapter, or paste or drop an image into the text. The file
 goes into `assets/images/`, and a Markdown line is inserted where the cursor is:
 
 ```markdown
