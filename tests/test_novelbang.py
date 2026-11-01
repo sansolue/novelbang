@@ -464,3 +464,30 @@ def test_trash_endpoints(tmp_path):
     r = c.post(f"/api/projects/{pid}/trash/restore", json={"name": item["name"]}).json()
     assert r["type"] == "chapter" and r["name"] == file and r["project"]["trashed"] == 0
     assert c.post(f"/api/projects/{pid}/trash/restore", json={"name": "../novel.toml"}).status_code == 400
+
+
+def test_rename_note(project):
+    project.write_note("timeline.md", "# Timeline\n")
+    assert project.rename_note("timeline.md", " Story timeline ") == "Story timeline.md"
+    assert "timeline.md" not in project.list_notes()
+    assert project.read_note("Story timeline.md") == "# Timeline\n"
+    # Just a change of case works, even where the file system ignores case.
+    assert project.rename_note("Story timeline.md", "story Timeline.md") == "story Timeline.md"
+    assert "story Timeline.md" in project.list_notes() and "Story timeline.md" not in project.list_notes()
+
+
+@pytest.mark.parametrize("title, message", [("world", "already a note"), ("", "needs a name"),
+                                            ("../escape", "letters, numbers"), (".hidden", "letters, numbers")])
+def test_rename_note_refuses(project, title, message):
+    with pytest.raises(ProjectError, match=message):
+        project.rename_note("outline.md", title)
+    assert "outline.md" in project.list_notes()
+
+
+def test_rename_note_endpoint(tmp_path):
+    c = TestClient(create_app(tmp_path / "ws", settings_path=tmp_path / "s.toml"), base_url="http://127.0.0.1")
+    pid = c.post("/api/projects", json={"title": "Rename Test"}).json()["id"]
+    r = c.post(f"/api/projects/{pid}/notes/outline.md/rename", json={"name": "Plot"})
+    assert r.status_code == 200 and r.json()["name"] == "Plot.md" and "Plot.md" in r.json()["notes"]
+    assert c.post(f"/api/projects/{pid}/notes/Plot.md/rename", json={"name": "world"}).status_code == 400
+    assert c.post(f"/api/projects/{pid}/notes/gone.md/rename", json={"name": "x"}).status_code == 400

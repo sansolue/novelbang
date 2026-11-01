@@ -467,6 +467,25 @@ class Project:
         self.notes_dir.mkdir(exist_ok=True)
         _atomic_write(self.notes_dir / check_filename(name), text)
 
+    def rename_note(self, name: str, title: str) -> str:
+        """Give a note a new name; returns its new file name."""
+        old = self.notes_dir / check_filename(name)
+        if not old.is_file():
+            raise ProjectError(f"No note {name!r}")
+        title = title.strip().removesuffix(".md").strip()
+        if not title:
+            raise ProjectError("A note needs a name")
+        try:
+            new = self.notes_dir / check_filename(title + ".md")
+        except ProjectError:
+            raise ProjectError("Note names can use letters, numbers, spaces, dots, dashes and "
+                               "underscores, and must start with a letter or number") from None
+        # On a Mac or PC "world.md" and "World.md" are the same file: that's only a change of case.
+        if new.exists() and not new.samefile(old):
+            raise ProjectError(f"There's already a note called “{title}”")
+        old.rename(new)
+        return new.name
+
     def delete_note(self, name: str) -> None:
         if trashed := self._to_trash(self.notes_dir / check_filename(name)):
             self._remember_trashed(trashed, {"type": "note", "file": name})

@@ -74,6 +74,10 @@ class Order(BaseModel):
     files: list[str]
 
 
+class NoteRename(BaseModel):
+    name: str
+
+
 class NewNote(BaseModel):
     name: str
 
@@ -443,6 +447,12 @@ def create_app(
         with ws.edit(pid) as p:
             p.write_note(name, body.text)
         return {"ok": True}
+
+    @app.post("/api/projects/{pid}/notes/{name}/rename")
+    def rename_note(pid: str, name: str, body: NoteRename):
+        with ws.edit(pid) as p:
+            new = p.rename_note(name, body.name)
+            return summary(p) | {"name": new}
 
     @app.delete("/api/projects/{pid}/notes/{name}")
     def delete_note(pid: str, name: str):

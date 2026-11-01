@@ -409,7 +409,7 @@ async function openView(type, id) {
     const url = type === "chapter" ? `/api/projects/${pid()}/chapters/${enc(id)}/text` : `/api/projects/${pid()}/notes/${enc(id)}`;
     const { text } = await api("GET", url);
     $("#doc-title").value = chapter ? chapter.title : id.replace(/\.md$/, "");
-    $("#doc-title").readOnly = !chapter;
+    $("#doc-title").placeholder = chapter ? "Chapter title" : "Note name";
     $("#chapter-meta").querySelectorAll("select").forEach((s) => (s.hidden = !chapter));
     $("#doc-synopsis").hidden = !chapter;
     $("#comment-btn").hidden = !chapter;
@@ -1313,6 +1313,29 @@ async function newNote() {
   go("note", res.name);
 }
 
+// The co-writer always reads these notes first (prompts.py, PRIORITY_NOTES).
+const KEY_NOTES = ["style.md", "characters.md", "world.md", "outline.md"];
+
+async function renameNote(title) {
+  const old = state.view.id;
+  const name = title.trim().replace(/\.md$/i, "").trim();
+  const back = () => { $("#doc-title").value = old.replace(/\.md$/, ""); };
+  if (!name || name + ".md" === old) return back();
+  // Even "Style" for "style": the co-writer matches these names exactly.
+  if (KEY_NOTES.includes(old) && !confirm(`The co-writer always reads “${old.replace(/\.md$/, "")}” before it writes. Renamed, it's read only when there's room left.\n\nRename it anyway?`)) {
+    return back();
+  }
+  await flushSave();
+  try {
+    const res = await api("POST", `/api/projects/${pid()}/notes/${enc(old)}/rename`, { name });
+    state.project = res;
+    go("note", res.name);
+  } catch (e) {
+    back();
+    throw e;
+  }
+}
+
 async function deleteDoc() {
   const { type, id } = state.view;
   const label = type === "chapter" ? state.project.chapters.find((c) => c.file === id)?.title : id;
@@ -1999,7 +2022,10 @@ function wire() {
     insertPictures([...e.target.files]);
     e.target.value = "";
   });
-  $("#doc-title").addEventListener("change", (e) => state.view?.type === "chapter" && saveChapterMeta({ title: e.target.value }));
+  $("#doc-title").addEventListener("change", (e) => {
+    if (state.view?.type === "chapter") saveChapterMeta({ title: e.target.value });
+    else if (state.view?.type === "note") renameNote(e.target.value).catch((err) => toast(err.message, true));
+  });
   $("#doc-kind").addEventListener("change", (e) => saveChapterMeta({ kind: e.target.value }));
   $("#doc-status").addEventListener("change", (e) => saveChapterMeta({ status: e.target.value }));
   const syn = $("#doc-synopsis");
