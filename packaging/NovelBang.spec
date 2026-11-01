@@ -33,6 +33,17 @@ if LINUX:
 # Licenses: NovelBang's own, and those of everything it ships (Settings → About shows both).
 (ROOT / "build").mkdir(exist_ok=True)
 licenses = [(str(ROOT / "LICENSE"), "."), (str(notices.write(ROOT / "build")), ".")]
+if sys.platform == "darwin":
+    # The menu's About NovelBang shows Credits.html under the version.
+    credits = ROOT / "build" / "Credits.html"
+    credits.write_text(
+        '<div style="font: 11px -apple-system, sans-serif; text-align: center">'
+        "NovelBang is free software under the MIT License.<br>"
+        "It's made with Python, FastAPI, pywebview, fpdf2 and other open-source software.<br>"
+        "<b>Settings → Licenses</b> shows all their licenses.</div>",
+        "utf-8",
+    )
+    licenses.append((str(credits), "."))
 
 a = Analysis(
     [str(ROOT / "packaging" / "novelbang_desktop.py")],
@@ -70,6 +81,6 @@ if sys.platform == "darwin":
             "LSApplicationCategoryType": "public.app-category.productivity",
             "LSMinimumSystemVersion": "12.0",
             "NSHighResolutionCapable": True,
-            "NSHumanReadableCopyright": "© SanSolue",
+            "NSHumanReadableCopyright": "© 2026 SanSolue. MIT License.",
         },
     )
