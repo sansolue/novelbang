@@ -71,16 +71,16 @@ by number; finished items move to [Done](#done).
 |---|---------|---------|
 | 1 | Find and replace in a chapter or note | 0.2.0 |
 | 2 | Search and replace across the whole book | 0.2.0 |
-| 3 | Daily goals and session stats | next release |
-| 5 | Comments that stay out of the book | next release |
+| 3 | Daily goals and session stats | 0.3.0 |
+| 5 | Comments that stay out of the book | 0.3.0 |
 | 6 | Rename, duplicate, archive and delete novels | 0.2.0 |
 | 7 | Import from Word, Markdown or plain text | 0.2.0 |
 | 8 | Word manuscript export | 0.2.0 |
 | 9 | Print-ready PDF export | 0.2.0 |
 | 10 | Update check | 0.2.0 |
 | 11 | Light and dark appearance | 0.2.0 |
-| 13 | Split and merge chapters | next release |
-| 14 | Restore deleted chapters and notes | next release |
-| 15 | Rename notes | next release |
-| 29 | Automatic backups | next release |
-| 30 | Linux desktop app and in-app updates | next release |
+| 13 | Split and merge chapters | 0.3.0 |
+| 14 | Restore deleted chapters and notes | 0.3.0 |
+| 15 | Rename notes | 0.3.0 |
+| 29 | Automatic backups | 0.3.0 |
+| 30 | Linux desktop app and in-app updates | 0.3.0 |
