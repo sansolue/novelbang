@@ -387,6 +387,43 @@ class Project:
         self.chapters.remove(ch)
         self.save()
 
+    def split_chapter(self, file: str, at: int, title: str) -> Chapter:
+        """Move the text from character `at` onward into a new chapter just after this one."""
+        ch = self.chapter(file)
+        text = self.read_chapter(file)
+        if not 0 < at < len(text):
+            raise ProjectError("Put the cursor where the new chapter should begin")
+        for m in (*comments.COMMENT.finditer(text), *_MD_IMAGE.finditer(text)):
+            if m.start() < at < m.end():
+                raise ProjectError("The cursor is inside a comment or a picture; move it before or after")
+        head, tail = text[:at].rstrip(), text[at:].strip()
+        if not head or not tail:
+            raise ProjectError("Both chapters would need some text: move the cursor into the middle")
+        new = self.add_chapter(title, ch.kind, after=file)
+        new.status = ch.status
+        self.save()
+        self.write_chapter(new.file, tail + "\n")
+        self.write_chapter(file, head + "\n")
+        return new
+
+    def merge_chapter(self, file: str) -> Chapter:
+        """Join the next chapter onto the end of this one; the next one's file goes to trash/."""
+        ch = self.chapter(file)
+        i = self.chapters.index(ch)
+        if i + 1 >= len(self.chapters):
+            raise ProjectError("This is the last chapter: there is nothing after it to merge")
+        nxt = self.chapters[i + 1]
+        head, tail = self.read_chapter(file), self.read_chapter(nxt.file)
+        fps = self._synopsis_fingerprints()
+        both_fresh = all(self.synopsis_state(c, t, fps) == "fresh" for c, t in ((ch, head), (nxt, tail)))
+        text = "\n\n".join(t for t in (head.strip(), tail.strip()) if t) + "\n"
+        self.write_chapter(file, text)
+        ch.synopsis = " ".join(s for s in (ch.synopsis.strip(), nxt.synopsis.strip()) if s)
+        self.delete_chapter(nxt.file)
+        if ch.synopsis and both_fresh:
+            self._record_synopsis(file, text)  # two up-to-date synopses still describe the whole
+        return ch
+
     def reorder(self, files: list[str]) -> None:
         by_file = {c.file: c for c in self.chapters}
         if sorted(files) != sorted(by_file):

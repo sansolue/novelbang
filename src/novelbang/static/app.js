@@ -371,6 +371,7 @@ function renderProject() {
         "🗒 ", name.replace(/\.md$/, "")))
   );
   $(".book-item").classList.toggle("active", isActive("book"));
+  $("#merge-btn").hidden = !isActive("chapter") || p.chapters.at(-1)?.file === state.view.id;
   $("#comments-count").textContent = p.chapters.reduce((n, c) => n + (c.comments || 0), 0) || "";
   const needing = p.chapters.filter((c) => ["stale", "missing"].includes(c.synopsis_state)).length;
   $("#synopses-count").textContent = needing ? `${needing} to update` : "";
@@ -410,7 +411,7 @@ async function openView(type, id) {
     $("#doc-title").readOnly = !chapter;
     $("#chapter-meta").querySelectorAll("select").forEach((s) => (s.hidden = !chapter));
     $("#doc-synopsis").hidden = !chapter;
-    $("#comment-btn").hidden = !chapter;
+    $("#comment-btn").hidden = $("#split-btn").hidden = !chapter;
     $(".history-btn").hidden = !p.history;
     if (chapter) {
       $("#doc-kind").value = chapter.kind;
@@ -1257,6 +1258,35 @@ async function newChapter() {
   go("chapter", res.file);
 }
 
+async function splitChapter() {
+  const ta = $("#doc-text");
+  const pos = ta.selectionStart;
+  if (!ta.value.slice(0, pos).trim() || !ta.value.slice(pos).trim()) {
+    return toast("Put the cursor where the new chapter should begin");
+  }
+  const r = await ask("Split chapter: the text after the cursor becomes", [
+    { name: "title", label: "New chapter title", value: "", required: true },
+  ]);
+  if (!r) return;
+  await flushSave();
+  // The server counts characters; JavaScript counts UTF-16 units, which differ for emoji.
+  const at = [...ta.value.slice(0, pos)].length;
+  const res = await api("POST", `/api/projects/${pid()}/chapters/${enc(state.view.id)}/split`, { at, title: r.title });
+  state.project = res.project;
+  go("chapter", res.file);
+}
+
+async function mergeChapter() {
+  const chs = state.project.chapters;
+  const i = chs.findIndex((c) => c.file === state.view.id);
+  const next = chs[i + 1];
+  if (!next) return;
+  if (!confirm(`Merge “${next.title}” onto the end of “${chs[i].title}”?\n\n“${next.title}” will be moved to the project's trash/ folder.`)) return;
+  await flushSave();
+  state.project = await api("POST", `/api/projects/${pid()}/chapters/${enc(state.view.id)}/merge`);
+  await openView("chapter", chs[i].file);  // same address, so go() wouldn't reload the text
+}
+
 async function newNote() {
   const r = await ask("New note", [{ name: "name", label: "Name", placeholder: "e.g. timeline, magic-system", required: true }]);
   if (!r) return;
@@ -1840,6 +1870,8 @@ function wire() {
     "new-chapter": newChapter,
     "new-note": newNote,
     "delete-doc": deleteDoc,
+    "split-chapter": () => splitChapter().catch((e) => toast(e.message, true)),
+    "merge-chapter": () => mergeChapter().catch((e) => toast(e.message, true)),
     synopses: () => openSynopses().catch((e) => toast(e.message, true)),
     "syn-generate": () => generateSynopses(),
     "syn-apply": () => applySynopses().catch((e) => toast(e.message, true)),

@@ -359,3 +359,60 @@ def test_preview_and_assets_api(tmp_path):
     assert "<h1>" not in note["html"] and "<em>notes</em>" in note["html"]
     meta = c.put(f"/api/projects/{pid}/meta", json={"picture_size": "0"}).json()["meta"]
     assert meta["picture_size"] == 0
+
+
+def test_split_chapter_at_cursor(project):
+    first = project.chapters[1]
+    project.update_chapter(first.file, status="revised")
+    at = PROSE.index("Morning came.")
+    new = project.split_chapter(first.file, at, "Morning")
+    assert [c.title for c in project.chapters] == ["Dedication", "Chapter One", "Morning", "Chapter Two"]
+    assert new.kind == "chapter" and new.status == "revised" and new.synopsis == ""
+    assert project.read_chapter(first.file).endswith("***\n")
+    assert project.read_chapter(new.file) == "Morning came. **Nobody** spoke.\n"
+    assert Project.load(project.root).chapters[2].file == new.file
+
+
+@pytest.mark.parametrize("at", [0, -1, len(PROSE) - 1, len(PROSE) + 5])
+def test_split_needs_text_on_both_sides(project, at):
+    with pytest.raises(ProjectError):
+        project.split_chapter(project.chapters[1].file, at, "Nope")
+    assert len(project.chapters) == 3 and len(list(project.chapters_dir.glob("*.md"))) == 3
+
+
+def test_split_refuses_inside_a_comment(project):
+    file = project.chapters[1].file
+    text = "Before.\n\n{==a passage==}{>>a note<<}\n\nAfter.\n"
+    project.write_chapter(file, text)
+    with pytest.raises(ProjectError, match="comment"):
+        project.split_chapter(file, text.index("note"), "Nope")
+    assert len(project.chapters) == 3
+
+
+def test_merge_chapter_with_next(project):
+    one, two = project.chapters[1], project.chapters[2]
+    project.write_chapter(two.file, "\nThe second day.\n")
+    project.update_chapter(two.file, synopsis="A second day.")
+    project.merge_chapter(one.file)
+    assert [c.title for c in project.chapters] == ["Dedication", "Chapter One"]
+    assert project.read_chapter(one.file) == PROSE.strip() + "\n\nThe second day.\n"
+    assert project.chapters[1].synopsis == "Mara finds a letter. A second day."
+    assert (project.root / "trash" / two.file).exists()
+    with pytest.raises(ProjectError):
+        project.merge_chapter(one.file)  # nothing after the last chapter
+
+
+def test_split_and_merge_endpoints(tmp_path):
+    c = TestClient(create_app(tmp_path / "ws", settings_path=tmp_path / "s.toml"), base_url="http://127.0.0.1")
+    pid = c.post("/api/projects", json={"title": "Split Test"}).json()["id"]
+    file = c.get(f"/api/projects/{pid}").json()["chapters"][0]["file"]
+    text = "One 😀 part.\n\nTwo part.\n"
+    c.put(f"/api/projects/{pid}/chapters/{file}/text", json={"text": text})
+    r = c.post(f"/api/projects/{pid}/chapters/{file}/split", json={"at": text.index("Two"), "title": "Two"})
+    assert r.status_code == 200
+    new = r.json()["file"]
+    assert c.get(f"/api/projects/{pid}/chapters/{new}/text").json()["text"] == "Two part.\n"
+    assert c.post(f"/api/projects/{pid}/chapters/{file}/split", json={"at": 0}).status_code == 400
+    r = c.post(f"/api/projects/{pid}/chapters/{file}/merge")
+    assert [ch["file"] for ch in r.json()["chapters"]] == [file]
+    assert c.get(f"/api/projects/{pid}/chapters/{file}/text").json()["text"] == "One 😀 part.\n\nTwo part.\n"

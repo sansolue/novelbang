@@ -57,6 +57,11 @@ class ChapterPatch(BaseModel):
     synopsis: str | None = None
 
 
+class Split(BaseModel):
+    at: int  # in characters (code points), where the new chapter begins
+    title: str = "Untitled chapter"
+
+
 class TextBody(BaseModel):
     text: str
 
@@ -380,6 +385,20 @@ def create_app(
     def delete_chapter(pid: str, file: str):
         with ws.edit(pid) as p:
             p.delete_chapter(file)
+            return summary(p)
+
+    @app.post("/api/projects/{pid}/chapters/{file}/split")
+    def split_chapter(pid: str, file: str, body: Split):
+        with ws.edit(pid) as p:
+            snapshot(p, "checkpoint", f"Before splitting {p.chapter(file).title}")
+            ch = p.split_chapter(file, body.at, body.title.strip() or "Untitled chapter")
+            return {"file": ch.file, "project": summary(p)}
+
+    @app.post("/api/projects/{pid}/chapters/{file}/merge")
+    def merge_chapter(pid: str, file: str):
+        with ws.edit(pid) as p:
+            snapshot(p, "checkpoint", f"Before merging {p.chapter(file).title} with the next chapter")
+            p.merge_chapter(file)
             return summary(p)
 
     @app.get("/api/projects/{pid}/chapters/{file}/text")
