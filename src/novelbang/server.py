@@ -20,7 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from . import __version__, backup, comments, config, progress, prompts
+from . import __version__, backup, comments, config, installer, progress, prompts
 from .export import EXPORTERS
 from .export.render import BOOK_CSS, RenderedChapter, render_markdown
 from .history import HistoryTracker, ProjectHistory, git_available, word_diff
@@ -884,7 +884,7 @@ def create_app(
             return {"supported": False}
         if not config.check_updates():
             return {"supported": True, "enabled": False}
-        return {"supported": True, "enabled": True, **await updates.status()}
+        return {"supported": True, "enabled": True, **await updates.status(), **installer.support()}
 
     @app.put("/api/update")
     def set_update_prefs(body: UpdatePrefs):

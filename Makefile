@@ -36,7 +36,7 @@ ifeq ($(OS),Windows_NT)
 else ifeq ($(shell uname -s),Darwin)
 	packaging/build-macos.sh
 else
-	@echo "The desktop app builds on macOS and Windows only" >&2; exit 1
+	packaging/build-linux.sh
 endif
 
 icon: ## Redraw packaging/icon.png

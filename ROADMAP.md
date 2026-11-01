@@ -49,12 +49,6 @@ by number; finished items move to [Done](#done).
 | 27 | Ready-made extra pages | S | "Also by", "About the author" and a newsletter sign-up page, filled in from Book details. |
 | 28 | Paperback cover template | S–M | Spine width from the page count and paper type, and a template at the right size for KDP or IngramSpark. |
 
-## Safety and platform
-
-| # | Feature | Size | Notes |
-|---|---------|------|-------|
-| 30 | Linux desktop app and in-app updates | M | Today the app only says an update exists. |
-
 ## Smaller gaps in finished features
 
 - **Import:** Scrivener projects (`.scriv`) aren't read directly. The app asks you to
@@ -89,3 +83,4 @@ by number; finished items move to [Done](#done).
 | 14 | Restore deleted chapters and notes | next release |
 | 15 | Rename notes | next release |
 | 29 | Automatic backups | next release |
+| 30 | Linux desktop app and in-app updates | next release |

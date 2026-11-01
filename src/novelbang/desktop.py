@@ -1,7 +1,7 @@
 """NovelBang as a desktop app: the same server, shown in a native window.
 
 The server runs on a background thread and the UI loads in the system web view
-(WebKit on macOS, Edge WebView2 on Windows), so nothing opens in a browser.
+(WebKit on macOS, Edge WebView2 on Windows, WebKitGTK on Linux), so nothing opens in a browser.
 Needs the `desktop` extra:  uv run --extra desktop novelbang-desktop
 """
 
@@ -21,6 +21,7 @@ from pathlib import Path
 
 import uvicorn
 
+from . import installer
 from .config import default_workspace, save_workspace, saved_workspace
 from .llm import LLMSettings, config_dir
 from .logs import log_dir, log_path, setup_logging
@@ -113,6 +114,21 @@ class DesktopAPI:
         self._ws = workspace
         self._first_run = first_run  # no folder chosen yet: the page asks where novels should live
         self._window = None  # set once the window exists
+        self._updater = installer.Updater()
+
+    def start_update(self) -> dict:
+        """Download and install the latest release; the page follows along with update_status()."""
+        return self._updater.start()
+
+    def update_status(self) -> dict:
+        return self._updater.status()
+
+    def restart_to_update(self) -> bool:
+        """Quit, so the update can finish, and start the new version. The page has saved first."""
+        if not self._updater.restart():
+            return False
+        self._window.destroy()
+        return True
 
     def reveal_exports(self, project_id: str) -> bool:
         root = self._ws.root.resolve()
@@ -232,6 +248,10 @@ def main() -> None:
     url = f"http://127.0.0.1:{port}"
     log.info("Desktop app on %s%s", url, "" if port == PORT else f" (port {PORT} was busy)")
 
+    try:
+        installer.clean_leftovers()
+    except OSError:
+        log.exception("Couldn't remove what an earlier update left behind")
     ollama = start_ollama()
     app = create_app(workspace, updates=UpdateChecker())
     api = DesktopAPI(app.state.workspace, first_run)

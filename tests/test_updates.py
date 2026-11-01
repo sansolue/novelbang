@@ -68,7 +68,7 @@ def test_fetch_latest_keeps_links_on_github(monkeypatch):
 
     real = httpx.AsyncClient
     monkeypatch.setattr(updates.httpx, "AsyncClient", lambda **kw: real(transport=httpx.MockTransport(handler), **kw))
-    assert asyncio.run(updates.fetch_latest()) == {"version": "1.2.3", "url": updates.RELEASES_PAGE}
+    assert asyncio.run(updates.fetch_latest()) == {"version": "1.2.3", "url": updates.RELEASES_PAGE, "assets": []}
 
 
 def test_app_preferences_are_merged(tmp_path):

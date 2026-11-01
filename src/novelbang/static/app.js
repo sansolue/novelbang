@@ -1982,12 +1982,48 @@ function renderUpdate() {
   try { later = localStorage.getItem("nb-update-later") || ""; } catch {}
   const note = $("#update-note");
   note.hidden = !(u?.newer && later !== u.latest);
-  if (!note.hidden) {
+  if (!note.hidden && !updating) {
     $("#update-text").textContent = `NovelBang ${u.latest} is out. You have ${u.current}.`;
     $("#update-link").href = u.url;
+    $("#update-link").title = u.installable ? "" : u.reason || "";
+    const installable = !!(u.installable && desktop()?.start_update);
+    $("#update-install").hidden = !installable;
+    $("#update-link").hidden = installable;
   }
   $("#update-pref").hidden = !u?.supported;
   $("#update-check").checked = !!u?.enabled;
+}
+
+// Download, check and install the new version, then restart into it. The window
+// closes the usual way, so unsaved text is saved first.
+let updating = false;
+async function installUpdate() {
+  updating = true;
+  $("#update-install").disabled = true;
+  const text = $("#update-text");
+  try {
+    let s = await desktop().start_update();
+    while (["checking", "downloading", "installing"].includes(s.state)) {
+      text.textContent = s.state === "downloading" && s.total
+        ? `Downloading NovelBang ${s.version}… ${Math.floor((100 * s.done) / s.total)}%`
+        : s.state === "installing" ? `Installing NovelBang ${s.version}…` : "Getting the update…";
+      await new Promise((r) => setTimeout(r, 400));
+      s = await desktop().update_status();
+    }
+    if (s.state !== "ready") throw new Error(s.error || "The update failed");
+    text.textContent = `Restarting into NovelBang ${s.version}…`;
+    await flushSave();
+    if (state.dirty) throw new Error("Your latest changes couldn't be saved, so NovelBang didn't restart. The update is installed: quit and reopen NovelBang to finish.");
+    await desktop().restart_to_update();
+  } catch (e) {
+    updating = false;
+    toast(e.message, true, false);
+    renderUpdate();
+    // Offer the download link instead, to install it by hand.
+    $("#update-install").hidden = true;
+    $("#update-install").disabled = false;
+    $("#update-link").hidden = false;
+  }
 }
 
 async function setUpdateChecks(enabled) {
@@ -2079,6 +2115,7 @@ function wire() {
     "add-comment": () => addComment().catch((e) => toast(e.message, true)),
     "bs-replace-all": () => replaceInBook().catch((e) => toast(e.message, true)),
     "reveal-log": () => desktop().reveal_log(),
+    "update-install": () => installUpdate(),
     "update-later": () => {
       try { localStorage.setItem("nb-update-later", state.update.latest); } catch {}
       renderUpdate();

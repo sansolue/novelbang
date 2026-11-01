@@ -39,21 +39,25 @@ your arguments (`--port`, `--host`, `--no-browser`).
 
 Then open **Settings**, pick your server preset, click **Detect**, choose a model.
 
-## Desktop app (macOS and Windows)
+## Desktop app (macOS, Windows and Linux)
 
-NovelBang also runs as a normal app on macOS and Windows, in its own window, with no
+NovelBang also runs as a normal app on macOS, Windows and Linux, in its own window, with no
 browser and no terminal. It runs the same server as `start.sh` behind a native window.
 Ready-built versions are on the [releases page](https://github.com/sansolue/novelbang/releases).
 
 ```sh
 packaging/build-macos.sh            # → dist/NovelBang.app and dist/NovelBang-<version>-<arch>.dmg
 pwsh packaging\build-windows.ps1    # → dist\NovelBang-<version>-x64-setup.exe and a portable .zip
+packaging/build-linux.sh            # → dist/NovelBang-<version>-<arch>.AppImage
 ```
 
 On a Mac, open the `.dmg` and drag NovelBang into Applications. On Windows, run the
 installer: it installs for your account only, with no admin rights needed, and adds
 NovelBang to the Start menu. The Windows build needs [Inno Setup 6](https://jrsoftware.org/isinfo.php)
-for the installer. The app:
+for the installer. On Linux, make the `.AppImage` executable and run it; it uses the
+system's WebKitGTK (`gir1.2-webkit2-4.1` on Ubuntu and Debian, `webkit2gtk4.1` on Fedora,
+`webkit2gtk-4.1` on Arch). Building it also needs `libgirepository1.0-dev libcairo2-dev
+pkg-config`. The app:
 
 - asks where your novels should live on first launch (`~/Novels` is suggested). Any folder
   works, including one in iCloud Drive or Dropbox. **Change…** next to the folder on the
@@ -65,11 +69,16 @@ for the installer. The app:
 - saves exports through a Save dialog; **Show in Finder** (**Open folder** on Windows) in
   Publish opens the exports folder
 - writes a log for debugging (see [Logs](#logs))
-- tells you on the home screen when a new version is out, with a link to download it.
-  It asks GitHub for the latest release once a day and sends nothing about you or your
-  writing. It never downloads or installs anything itself. **Not now** hides the notice
-  until the next version, and **Settings → Tell me when a new version is out** turns
-  the check off. The browser version (`start.sh`) never checks.
+- tells you on the home screen when a new version is out. It asks GitHub for the latest
+  release once a day and sends nothing about you or your writing. **Update and restart**
+  downloads the new version, checks it against the SHA-256 checksum GitHub publishes for
+  the file, installs it in place (the `.app`, the Windows installer run silently, or the
+  AppImage) and restarts, saving your text first. On a Mac it also checks the new app's
+  signature, and that it's from the same developer when this one is signed. The portable
+  Windows `.zip`, an app macOS runs from a temporary copy (open it from Applications), or
+  one in a folder NovelBang can't write to get a download link instead. **Not now** hides
+  the notice until the next version, and **Settings → Tell me when a new version is out**
+  turns the check off. The browser version (`start.sh`) never checks.
 
 **Settings → Appearance** picks light or dark, or follows the system setting (the default).
 
@@ -85,6 +94,9 @@ The Windows build is x64; Windows on ARM runs it under emulation. Unless it's si
 (see [Signing the Windows app](#signing-the-windows-app)), SmartScreen warns on first run
 (**More info → Run anyway**). It uses the Microsoft Edge WebView2 Runtime, which comes
 with Windows 11 and up-to-date Windows 10.
+
+The Linux build is x86_64, built on Ubuntu 22.04, so it runs on distributions with that
+glibc (2.35) or newer. It brings its own Python but uses the system's GTK 3 and WebKitGTK.
 
 ### Releasing
 

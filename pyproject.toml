@@ -20,6 +20,8 @@ novelbang-desktop = "novelbang.desktop:main"
 [project.optional-dependencies]
 desktop = [
     "pywebview>=6.2.1",
+    # Linux: the GTK window, using the system's GTK and WebKitGTK (see packaging/build-linux.sh).
+    "pywebview[gtk]>=6.2.1; sys_platform == 'linux'",
 ]
 
 [build-system]

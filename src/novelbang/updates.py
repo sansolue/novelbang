@@ -1,8 +1,8 @@
 """Tells the desktop app when a newer release is out.
 
 At most once a day it asks GitHub for the latest release (one request, nothing about
-you or your writing sent with it) and remembers the answer in update.json. It never
-downloads or installs anything: the app shows a link to the release page.
+you or your writing sent with it) and remembers the answer in update.json. Installing
+it is up to the author: see installer.py.
 """
 
 from __future__ import annotations
@@ -49,7 +49,11 @@ async def fetch_latest() -> dict:
     url = data.get("html_url") or RELEASES_PAGE
     if not url.startswith("https://github.com/"):
         url = RELEASES_PAGE
-    return {"version": str(data.get("tag_name", "")).removeprefix("v"), "url": url}
+    assets = [
+        {"name": a.get("name"), "url": a.get("browser_download_url"), "digest": a.get("digest")}
+        for a in data.get("assets") or [] if isinstance(a, dict)
+    ]
+    return {"version": str(data.get("tag_name", "")).removeprefix("v"), "url": url, "assets": assets}
 
 
 class UpdateChecker:
