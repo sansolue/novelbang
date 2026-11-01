@@ -784,7 +784,7 @@ class Workspace:
         return Project.load(path)
 
     @contextmanager
-    def _locked(self, project_id: str) -> Iterator[None]:
+    def locked(self, project_id: str) -> Iterator[None]:
         with self._locks_guard:
             lock = self._locks.setdefault(project_id, threading.Lock())
         with lock:
@@ -795,7 +795,7 @@ class Workspace:
         title = title.strip()
         if not title:
             raise ProjectError("A novel needs a title")
-        with self._locked(project_id):
+        with self.locked(project_id):
             p = self.get(project_id)
             p.meta.title = title
             p.save()
@@ -807,7 +807,7 @@ class Workspace:
 
     def duplicate(self, project_id: str) -> Project:
         """A copy to experiment on: same text, notes and pictures; its own identity and history."""
-        with self._locked(project_id):
+        with self.locked(project_id):
             src = self.get(project_id)
             title = f"{src.meta.title} (copy)"
             dest = _free_path(self.root, slugify(title, "novel"))
@@ -828,13 +828,13 @@ class Workspace:
         return copy
 
     def archive(self, project_id: str) -> None:
-        with self._locked(project_id):
+        with self.locked(project_id):
             p = self.get(project_id)
             self.archive_dir.mkdir(exist_ok=True)
             p.root.rename(_free_path(self.archive_dir, p.id))
 
     def unarchive(self, project_id: str) -> Project:
-        with self._locked(project_id):
+        with self.locked(project_id):
             p = self.get_archived(project_id)
             dest = _free_path(self.root, p.id)
             p.root.rename(dest)
@@ -842,7 +842,7 @@ class Workspace:
 
     def delete(self, project_id: str, archived: bool = False) -> Path:
         """Move a novel to "Deleted novels/"; returns where it went."""
-        with self._locked(project_id):
+        with self.locked(project_id):
             p = self.get_archived(project_id) if archived else self.get(project_id)
             self.trash_dir.mkdir(exist_ok=True)
             dest = _free_path(self.trash_dir, p.id)

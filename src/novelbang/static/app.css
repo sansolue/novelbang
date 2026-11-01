@@ -299,6 +299,8 @@ dialog h3 { margin: 0 0 12px; font: 600 20px var(--serif); }
 dialog h4 { margin: 4px 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
 dialog menu { display: flex; justify-content: flex-end; gap: 8px; padding: 0; margin: 16px 0 0; }
 .presets { display: flex; gap: 4px; margin: -4px 0 10px; }
+.backup-status { align-items: center; }
+.backup-status .error { color: var(--danger); }
 dialog h4.section { margin: 18px 0 8px; padding-top: 12px; border-top: 1px solid var(--line); }
 .update-note {
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: -16px 0 24px; padding: 10px 14px;

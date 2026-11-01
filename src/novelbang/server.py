@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import threading
 import time
 import traceback
 from contextlib import asynccontextmanager
@@ -19,7 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from . import __version__, comments, config, prompts
+from . import __version__, backup, comments, config, prompts
 from .export import EXPORTERS
 from .export.render import BOOK_CSS, RenderedChapter, render_markdown
 from .history import HistoryTracker, ProjectHistory, git_available, word_diff
@@ -117,6 +118,12 @@ class ResolveComment(BaseModel):
     raw: str  # its markup, checked before it's taken out
 
 
+class BackupPrefs(BaseModel):
+    folder: str = ""  # empty: backups off
+    every: int = 24  # hours
+    keep: int = 10  # zips kept per novel
+
+
 class UpdatePrefs(BaseModel):
     enabled: bool
 
@@ -198,12 +205,59 @@ def create_app(
             except Exception:
                 log.exception("Automatic snapshot of %s failed", root)
 
+    backups = {"lock": threading.Lock(), "error": None}
+
+    def run_backups(now: bool = False) -> dict:
+        """Back up the novels that are due, or (`now`) every novel changed since its last backup."""
+        prefs = config.backup_prefs()
+        if not prefs["backup_folder"]:
+            return {"done": 0, "unchanged": 0}
+        dest = Path(prefs["backup_folder"])
+        done = unchanged = 0
+        with backups["lock"]:
+            try:
+                # Never made here: an unplugged drive's folder would land on this disk instead.
+                if not dest.is_dir():
+                    raise OSError(f"The backup folder {dest} isn't there. Is its drive connected?")
+                for p in ws.list():
+                    with ws.locked(p.id):
+                        last = backup.last_backup(dest, p.id)
+                        if now:
+                            needed = last is None or backup.changed_since(p.root, last)
+                        else:
+                            needed = backup.due(p.root, dest, prefs["backup_every"])
+                        if needed:
+                            out = backup.backup(p.root, dest, prefs["backup_keep"])
+                            log.info("Backed up %s (%d KB)", p.id, out.stat().st_size // 1024)
+                            done += 1
+                        else:
+                            unchanged += 1
+            except OSError as e:
+                if backups["error"] != str(e):  # once, not every few minutes while a drive is away
+                    log.warning("Backup failed: %s", e)
+                backups["error"] = str(e)
+                raise ProjectError(f"Backup failed: {e}") from None
+            backups["error"] = None
+        return {"done": done, "unchanged": unchanged}
+
+    def scheduled_backups() -> None:
+        try:
+            run_backups()
+        except ProjectError:
+            pass  # logged, and shown in Settings
+        except Exception:
+            log.exception("Automatic backup crashed")
+
     @asynccontextmanager
     async def lifespan(_: FastAPI):
         async def loop():
+            ticks = 0
             while True:
                 await asyncio.sleep(15)
                 await asyncio.to_thread(flush_history)
+                if ticks % 20 == 0:  # every 5 minutes, starting with the first
+                    await asyncio.to_thread(scheduled_backups)
+                ticks += 1
 
         task = asyncio.create_task(loop())
         try:
@@ -777,6 +831,42 @@ def create_app(
             yield json.dumps({"done": True}) + "\n"
 
         return StreamingResponse(ndjson(), media_type="application/x-ndjson")
+
+    # ---- backups -------------------------------------------------------------
+
+    def backup_status() -> dict:
+        prefs = config.backup_prefs()
+        dest = Path(prefs["backup_folder"]) if prefs["backup_folder"] else None
+        lasts = [t for p in ws.list() if (t := backup.last_backup(dest, p.id))] if dest and dest.is_dir() else []
+        return {"folder": prefs["backup_folder"], "every": prefs["backup_every"], "keep": prefs["backup_keep"],
+                "intervals": config.BACKUP_INTERVALS, "last": max(lasts, default=None), "error": backups["error"]}
+
+    @app.get("/api/backups")
+    def get_backups():
+        return backup_status()
+
+    @app.put("/api/backups")
+    def put_backups(body: BackupPrefs):
+        folder = ""
+        if body.folder.strip():
+            path = backup.check_folder(Path(body.folder.strip()), ws.root)
+            if not path.is_dir():
+                raise ProjectError(f"There's no folder {path}. Create it first, or choose another.")
+            folder = str(path)
+        if body.every not in config.BACKUP_INTERVALS:
+            raise ProjectError(f"Back up every {', '.join(map(str, config.BACKUP_INTERVALS))} hours")
+        if not 1 <= body.keep <= 100:
+            raise ProjectError("Keep between 1 and 100 backups of each novel")
+        config.save_backup_prefs(folder, body.every, body.keep)
+        backups["error"] = None
+        log.info("Backups %s", f"every {body.every} h, keeping {body.keep}, to {folder}" if folder else "off")
+        return backup_status()
+
+    @app.post("/api/backups/run")
+    def run_backups_now():
+        if not config.backup_prefs()["backup_folder"]:
+            raise ProjectError("Choose a backup folder first")
+        return {**run_backups(now=True), "status": backup_status()}
 
     # ---- diagnostics -------------------------------------------------------
 

@@ -322,6 +322,30 @@
     </label>
     <label class="check plain" id="update-pref" hidden><input type="checkbox" id="update-check"> Tell me when a new version is out
       <span class="muted">(checks GitHub once a day; nothing about you or your writing is sent)</span></label>
+    <h4 class="section">Backups</h4>
+    <p class="muted small-label">Each novel is zipped, with its version history, into a folder you choose. Pick one on
+      another drive, or a synced folder (Dropbox, iCloud Drive, OneDrive), so a lost disk doesn't take the book with it.</p>
+    <label>Backup folder
+      <div class="row tight">
+        <input id="backup-folder" placeholder="None: backups are off" spellcheck="false" autocomplete="off">
+        <button type="button" data-action="backup-choose" id="backup-choose" hidden>Choose…</button>
+      </div>
+    </label>
+    <div class="row">
+      <label>Back up a changed novel
+        <select id="backup-every">
+          <option value="1">every hour</option>
+          <option value="6">every 6 hours</option>
+          <option value="24">once a day</option>
+          <option value="168">once a week</option>
+        </select>
+      </label>
+      <label>Backups kept per novel <input id="backup-keep" type="number" min="1" max="100" step="1"></label>
+    </div>
+    <div class="row tight backup-status">
+      <p class="muted small-label" id="backup-status"></p>
+      <button type="button" class="small" data-action="backup-now" id="backup-now">Back up now</button>
+    </div>
     <p class="muted small-label about" id="about" hidden>
       NovelBang <span id="about-version"></span> · Log (for reporting problems; it never contains your writing):
       <code id="about-log"></code>

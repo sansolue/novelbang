@@ -1765,6 +1765,8 @@ async function openSettings() {
   }
   $("#model-status").textContent = "";
   $("#theme-select").value = savedTheme();
+  $("#backup-choose").hidden = !desktop()?.choose_backup_folder;
+  loadBackups().catch((e) => toast(e.message, true));
   $("#settings-dialog").showModal();
   detectModels(true);
   api("GET", "/api/about").then((a) => {
@@ -1797,9 +1799,62 @@ async function saveSettings() {
     if (!input.name) continue;
     data[input.name] = input.type === "checkbox" ? input.checked : input.type === "number" ? Number(input.value) : input.value;
   }
+  try {
+    await api("PUT", "/api/backups", backupForm());
+  } catch (e) {
+    toast("Backup settings not saved: " + e.message, true, false);
+  }
   state.settings = await api("PUT", "/api/settings", data);
   $("#model-badge").textContent = state.settings.model || "no model";
   toast("Settings saved");
+}
+
+// ---------------------------------------------------------------- backups
+
+async function loadBackups() {
+  const b = await api("GET", "/api/backups");
+  $("#backup-folder").value = b.folder;
+  $("#backup-every").value = String(b.every);
+  $("#backup-keep").value = b.keep;
+  renderBackupStatus(b);
+}
+
+function renderBackupStatus(b) {
+  const status = $("#backup-status");
+  status.classList.toggle("error", !!b.error);
+  status.textContent = b.error || (!b.folder ? "" : b.last ? `Last backup: ${when(b.last)}` : "No backups yet");
+  $("#backup-now").hidden = !b.folder;
+}
+
+const backupForm = () => ({
+  folder: $("#backup-folder").value.trim(),
+  every: Number($("#backup-every").value),
+  keep: Number($("#backup-keep").value),
+});
+
+async function chooseBackupFolder() {
+  const picked = await desktop().choose_backup_folder($("#backup-folder").value.trim());
+  if (picked) $("#backup-folder").value = picked;
+}
+
+async function backupNow() {
+  const btn = $("#backup-now");
+  btn.disabled = true;
+  $("#backup-status").textContent = "Backing up…";
+  try {
+    renderBackupStatus(await api("PUT", "/api/backups", backupForm()));  // the folder as typed, not as last saved
+    await flushSave();
+    const r = await api("POST", "/api/backups/run");
+    renderBackupStatus(r.status);
+    const novels = (n) => `${n} ${n === 1 ? "novel" : "novels"}`;
+    toast(r.done ? `Backed up ${novels(r.done)}` + (r.unchanged ? `; ${novels(r.unchanged)} unchanged since the last backup` : "")
+      : "Nothing has changed since the last backup");
+  } catch (e) {
+    toast(e.message, true, false);
+    loadBackups().catch(() => {});
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 // ---------------------------------------------------------------- appearance & updates
@@ -1935,6 +1990,8 @@ function wire() {
     "new-note": newNote,
     "delete-doc": deleteDoc,
     trash: () => openTrash().catch((e) => toast(e.message, true)),
+    "backup-choose": () => chooseBackupFolder().catch((e) => toast(e.message, true)),
+    "backup-now": () => backupNow(),
     "doc-more": () => docMenu($('[data-action="doc-more"]')),
     synopses: () => openSynopses().catch((e) => toast(e.message, true)),
     "syn-generate": () => generateSynopses(),

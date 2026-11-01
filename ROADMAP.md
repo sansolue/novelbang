@@ -6,10 +6,9 @@ by number; finished items move to [Done](#done).
 
 ## Recommended order
 
-1. **Safety:** 29 (automatic backups).
-2. **3. Daily goals.**
-3. **20. AI beta-reader**, which builds on comments.
-4. **26. Book design themes**, the biggest step toward replacing Vellum or Atticus.
+1. **3. Daily goals.**
+2. **20. AI beta-reader**, which builds on comments.
+3. **26. Book design themes**, the biggest step toward replacing Vellum or Atticus.
 
 ## Writing day to day
 
@@ -56,7 +55,6 @@ by number; finished items move to [Done](#done).
 
 | # | Feature | Size | Notes |
 |---|---------|------|-------|
-| 29 | Automatic backups | S | Zip the novel to another folder on a schedule. Version history lives inside the project folder, so a lost disk takes it too. |
 | 30 | Linux desktop app and in-app updates | M | Today the app only says an update exists. |
 
 ## Smaller gaps in finished features
@@ -91,3 +89,4 @@ by number; finished items move to [Done](#done).
 | 13 | Split and merge chapters | next release |
 | 14 | Restore deleted chapters and notes | next release |
 | 15 | Rename notes | next release |
+| 29 | Automatic backups | next release |

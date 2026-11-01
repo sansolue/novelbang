@@ -368,6 +368,27 @@ You can browse it with normal tools:
 git --git-dir=.novelbang/history.git --work-tree=. log --stat
 ```
 
+## Backups
+
+Version history lives inside each novel's folder, so a lost or broken disk takes
+it too. In **Settings → Backups**, choose a folder on another drive, or a synced
+folder (Dropbox, iCloud Drive, OneDrive), and NovelBang zips each novel into it:
+
+```
+Backup folder/
+  the-salt-road/
+    the-salt-road 2026-11-01 14.30.05.zip
+```
+
+A zip holds the whole novel folder, version history included, except `exports/`.
+A novel is backed up when it has changed and its last backup is older than the
+interval you pick (every hour, 6 hours, day or week), and only the newest backups
+of each novel are kept (10 unless you change it). **Back up now** backs up every
+novel that changed since its last backup. Nothing else in the backup folder is
+touched, and if the folder goes missing (an unplugged drive) NovelBang says so in
+Settings rather than writing somewhere else. To restore, unzip a backup into your
+folder of novels.
+
 ## How the co-writer uses context
 
 Local models have small context windows, so each request is trimmed to the

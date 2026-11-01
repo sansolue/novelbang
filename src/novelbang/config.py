@@ -57,3 +57,24 @@ def check_updates(path: Path | None = None) -> bool:
 
 def save_check_updates(enabled: bool, path: Path | None = None) -> None:
     save_app({"check_updates": bool(enabled)}, path)
+
+
+BACKUP_DEFAULTS = {"backup_folder": "", "backup_every": 24, "backup_keep": 10}
+BACKUP_INTERVALS = (1, 6, 24, 168)  # hours: hourly, a few times a day, daily, weekly
+
+
+def backup_prefs(path: Path | None = None) -> dict:
+    """Where and how often novels are backed up; an empty folder means backups are off."""
+    saved = load_app(path)
+    prefs = {k: saved.get(k, v) for k, v in BACKUP_DEFAULTS.items()}
+    if not isinstance(prefs["backup_folder"], str):
+        prefs["backup_folder"] = ""
+    if prefs["backup_every"] not in BACKUP_INTERVALS:
+        prefs["backup_every"] = BACKUP_DEFAULTS["backup_every"]
+    if not isinstance(prefs["backup_keep"], int) or not 1 <= prefs["backup_keep"] <= 100:
+        prefs["backup_keep"] = BACKUP_DEFAULTS["backup_keep"]
+    return prefs
+
+
+def save_backup_prefs(folder: str, every: int, keep: int, path: Path | None = None) -> None:
+    save_app({"backup_folder": folder, "backup_every": every, "backup_keep": keep}, path)

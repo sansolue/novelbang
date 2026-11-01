@@ -159,6 +159,16 @@ class DesktopAPI:
             return None
         return self._use(Path(picked[0] if isinstance(picked, (list, tuple)) else picked))
 
+    def choose_backup_folder(self, current: str = "") -> str | None:
+        """Pick a folder for backups with the system folder dialog; None if cancelled."""
+        import webview
+
+        start = current if current and Path(current).is_dir() else str(Path.home())
+        picked = self._window.create_file_dialog(webview.FileDialog.FOLDER, directory=start)
+        if not picked:
+            return None
+        return str(picked[0] if isinstance(picked, (list, tuple)) else picked)
+
     def _use(self, path: Path) -> dict:
         path, note = path.resolve(), ""
         if Project.is_project(path):
