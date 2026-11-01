@@ -7,7 +7,7 @@ import threading
 import time
 import traceback
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from urllib.parse import quote
 
@@ -20,14 +20,14 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from . import __version__, backup, comments, config, prompts
+from . import __version__, backup, comments, config, progress, prompts
 from .export import EXPORTERS
 from .export.render import BOOK_CSS, RenderedChapter, render_markdown
 from .history import HistoryTracker, ProjectHistory, git_available, word_diff
 from .importer import MAX_IMPORT_BYTES, import_manuscript
 from .logs import log_path, quotes_writing, without_writing
 from .llm import THINKING, LLMError, LLMSettings, list_models, stream_chat
-from .project import CHAPTER_KINDS, CHAPTER_STATUSES, Project, ProjectError, Workspace, check_filename
+from .project import CHAPTER_KINDS, CHAPTER_STATUSES, Project, ProjectError, Workspace, check_filename, count_words
 from .search import pattern, replace_in, search
 from .updates import UpdateChecker
 
@@ -309,11 +309,13 @@ def create_app(
 
     def summary(p: Project) -> dict:
         stats = p.chapter_stats()
+        words = sum(s["words"] for s in stats.values())
         return {
             "id": p.id,
             "path": str(p.root),
             "meta": p.meta.__dict__,
-            "words": sum(s["words"] for s in stats.values()),
+            "words": words,
+            "progress": progress.summary(p, words),
             "chapters": [
                 {**c.__dict__, **stats[c.file], "missing": p.is_missing(c.file)} for c in p.chapters
             ],
@@ -471,8 +473,10 @@ def create_app(
     @app.put("/api/projects/{pid}/chapters/{file}/text")
     def save_chapter_text(pid: str, file: str, body: TextBody):
         with ws.edit(pid) as p:
+            before = 0 if p.is_missing(file) else count_words(p.read_chapter(file))
             p.write_chapter(file, body.text)
-        return {"ok": True}
+            progress.record(p, count_words(body.text) - before)  # the day's writing
+            return {"ok": True, "today": progress.load_days(p).get(date.today().isoformat(), 0)}
 
     @app.put("/api/projects/{pid}/order")
     def reorder(pid: str, body: Order):

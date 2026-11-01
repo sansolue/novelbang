@@ -117,6 +117,20 @@ label.check input { width: auto; }
 .book-title { font: 600 16px var(--serif); max-width: 30vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .progress { display: flex; align-items: center; gap: 8px; margin-left: 12px; color: var(--muted); font-size: 12px; }
 .progress .bar { width: 90px; height: 5px; background: var(--line); border-radius: 3px; overflow: hidden; }
+.today-btn { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.today-btn.met { color: var(--accent); }
+.goal-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 8px 0 16px; }
+.goal-stat { padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius); }
+.goal-stat strong { display: block; font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.goal-stat span { font-size: 12px; color: var(--muted); }
+.goal-chart { margin: 0 0 16px; }
+.goal-chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.goal-chart .bar-mark { fill: var(--accent); pointer-events: none; }  /* the column behind it takes the hover */
+.goal-chart .hit { fill: transparent; }
+.goal-chart .hit:hover + .bar-mark, .goal-chart .bar-mark.today { fill: color-mix(in srgb, var(--accent) 75%, var(--fg)); }
+.goal-chart .baseline { stroke: var(--line); stroke-width: 1; }
+.goal-chart .goal-line { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 4 3; }
+.goal-chart text { fill: var(--muted); font-size: 11px; }
 .progress .bar div { height: 100%; background: var(--accent); width: 0; transition: width .3s; }
 .save-state { font-size: 12px; color: var(--muted); min-width: 60px; }
 

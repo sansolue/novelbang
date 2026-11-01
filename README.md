@@ -344,6 +344,19 @@ per chapter to remember what happened earlier. NovelBang keeps them honest:
 - When you **Continue** near the start of a chapter, the co-writer also sees
   the closing lines of the previous chapter.
 
+## Daily goals
+
+**Today** in the top bar shows the words you've written today against your daily
+goal, and your streak. Click it for the last 30 days as a chart, and to set a daily
+goal, the book's word target and an optional date to finish by. With a deadline,
+it works out how many words a day will get you there.
+
+Only writing counts: each save in the editor adds the change in that chapter's
+word count, so cuts count against the day. Importing, restoring a version,
+Replace all and deleting chapters don't. A daily goal of 0 means any writing keeps
+the streak going, and a day you haven't written yet doesn't break the streak until
+it's over. The totals are kept in `.novelbang/progress.json`.
+
 ## Version history
 
 Every chapter and note has a **History** button showing earlier versions with

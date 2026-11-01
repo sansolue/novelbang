@@ -342,6 +342,7 @@ function renderProject() {
   $("#book-title").textContent = p.meta.title;
   $("#total-words").textContent = `${fmt(p.words)} / ${fmt(p.meta.target_words || 0)}`;
   $("#progress-fill").style.width = Math.min(100, (100 * p.words) / (p.meta.target_words || 1)) + "%";
+  renderToday();
   $("#project-path").textContent = p.path;
 
   let n = 0;
@@ -473,8 +474,15 @@ async function doFlushSave() {
   const url = type === "chapter" ? `/api/projects/${pid()}/chapters/${enc(id)}/text` : `/api/projects/${pid()}/notes/${enc(id)}`;
   try {
     setSaveState("Saving…");
-    await api("PUT", url, { text });
+    const saved = await api("PUT", url, { text });
     setSaveState("Saved");
+    if (type === "chapter" && saved.today !== undefined) {
+      const pr = state.project.progress, goal = Math.max(pr.goal, 1);
+      const crossed = (pr.today >= goal) !== (saved.today >= goal);
+      pr.today = saved.today;
+      pr.recent.at(-1).words = saved.today;
+      if (crossed) refreshProject().catch(() => {});  // the streak changes with it
+    }
     if (type === "chapter") {
       const ch = state.project.chapters.find((c) => c.file === id);
       if (ch) {
@@ -1809,6 +1817,97 @@ async function saveSettings() {
   toast("Settings saved");
 }
 
+// ---------------------------------------------------------------- goals
+
+function renderToday() {
+  const pr = state.project.progress;
+  const met = pr.goal > 0 && pr.today >= pr.goal;
+  $("#today-btn").textContent = `Today ${fmt(pr.today)}${pr.goal ? ` / ${fmt(pr.goal)}` : ""}${met ? " ✓" : ""}` +
+    (pr.streak > 1 ? ` · ${pr.streak}-day streak` : "");
+  $("#today-btn").classList.toggle("met", met);
+}
+
+async function openGoals() {
+  await flushSave();
+  await refreshProject();  // the day may have changed since the project was loaded
+  const { meta } = state.project;
+  $("#goal-daily").value = meta.daily_words;
+  $("#goal-target").value = meta.target_words;
+  $("#goal-deadline").value = meta.deadline;
+  renderGoals();
+  $("#goals-dialog").returnValue = "";  // Esc keeps the last value: it mustn't count as Save
+  $("#goals-dialog").showModal();
+}
+
+function renderGoals() {
+  const pr = state.project.progress;
+  const d = pr.deadline;
+  const days = (n) => `${fmt(n)} ${n === 1 ? "day" : "days"}`;
+  const tile = (value, label) => el("div", { class: "goal-stat" }, el("strong", {}, value), el("span", {}, label));
+  $("#goal-stats").replaceChildren(
+    tile(fmt(pr.today), pr.goal ? `words today, of ${fmt(pr.goal)}` : "words today"),
+    tile(days(pr.streak), pr.goal ? `in a row reaching ${fmt(pr.goal)}` : "in a row writing"),
+    !d ? tile(`${fmt(state.project.words)}`, `of ${fmt(state.project.meta.target_words)} words in the book`)
+      : d.remaining === 0 ? tile("Done", `the book has reached ${fmt(state.project.meta.target_words)} words`)
+      : d.days_left === 0 ? tile(fmt(d.remaining), `words short; the deadline ${d.date} has passed`)
+      : tile(`${fmt(d.per_day)} a day`, `for ${days(d.days_left)} to finish by ${d.date}`));
+  $("#goal-chart").replaceChildren(goalChart(pr.recent, pr.goal));
+}
+
+// Words per day as bars, with the daily goal as a dashed line. Hover a day for its count.
+function goalChart(recent, goal) {
+  const W = 600, H = 150, top = 14, bottom = 20, right = 56;
+  const ns = "http://www.w3.org/2000/svg";
+  const svgEl = (tag, attrs, text) => {
+    const n = document.createElementNS(ns, tag);
+    for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+    if (text !== undefined) n.textContent = text;
+    return n;
+  };
+  const max = Math.max(goal, ...recent.map((r) => r.words), 1) * 1.1;
+  const plotW = W - right, plotH = H - top - bottom, base = top + plotH;
+  const step = plotW / recent.length, gap = step / 4, bw = step - gap;  // thin bars, clear gaps
+  const y = (v) => base - (Math.max(v, 0) / max) * plotH;
+  const label = (iso) => new Date(iso + "T12:00").toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+  const met = recent.filter((r) => r.words >= Math.max(goal, 1)).length;
+  const total = recent.reduce((n, r) => n + Math.max(r.words, 0), 0);
+  const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img",
+    "aria-label": `Words written each day over the last ${recent.length} days: ${fmt(total)} in all, ` +
+      `best day ${fmt(Math.max(...recent.map((r) => r.words), 0))}, goal reached on ${met} days.` });
+  svg.append(svgEl("line", { class: "baseline", x1: 0, x2: plotW, y1: base, y2: base }));
+  recent.forEach((r, i) => {
+    const x = i * step + gap / 2, h = base - y(r.words), rad = Math.min(4, h, bw / 2);
+    const hit = svgEl("rect", { class: "hit", x: i * step, y: top, width: step, height: plotH });
+    const words = r.words < 0 ? `${fmt(-r.words)} words cut` : `${fmt(r.words)} ${r.words === 1 ? "word" : "words"}`;
+    hit.append(svgEl("title", {}, `${label(r.date)}: ${words}`));
+    svg.append(hit);
+    if (h > 0) {
+      // Rounded at the top, square on the baseline.
+      svg.append(svgEl("path", { class: "bar-mark" + (i === recent.length - 1 ? " today" : ""),
+        d: `M${x},${base}V${base - h + rad}Q${x},${base - h} ${x + rad},${base - h}H${x + bw - rad}` +
+           `Q${x + bw},${base - h} ${x + bw},${base - h + rad}V${base}Z` }));
+    }
+  });
+  if (goal > 0) {
+    svg.append(svgEl("line", { class: "goal-line", x1: 0, x2: plotW, y1: y(goal), y2: y(goal) }));
+    svg.append(svgEl("text", { x: plotW + 6, y: y(goal) + 4 }, `goal ${fmt(goal)}`));
+  }
+  svg.append(svgEl("text", { x: 0, y: H - 4 }, label(recent[0].date)));
+  svg.append(svgEl("text", { x: plotW, y: H - 4, "text-anchor": "end" }, "Today"));
+  return svg;
+}
+
+async function saveGoals() {
+  await flushSave();
+  state.project = await api("PUT", `/api/projects/${pid()}/meta`, {
+    daily_words: Number($("#goal-daily").value || 0),
+    target_words: Number($("#goal-target").value || 0),
+    deadline: $("#goal-deadline").value,
+  });
+  if (isActive("book")) fillBookForm();  // it shows the book target too
+  renderProject();
+}
+
 // ---------------------------------------------------------------- backups
 
 async function loadBackups() {
@@ -1990,6 +2089,7 @@ function wire() {
     "new-note": newNote,
     "delete-doc": deleteDoc,
     trash: () => openTrash().catch((e) => toast(e.message, true)),
+    goals: () => openGoals().catch((e) => toast(e.message, true)),
     "backup-choose": () => chooseBackupFolder().catch((e) => toast(e.message, true)),
     "backup-now": () => backupNow(),
     "doc-more": () => docMenu($('[data-action="doc-more"]')),
@@ -2092,6 +2192,8 @@ function wire() {
   $("#book-view").addEventListener("input", saveBookForm);
   $("#book-view").addEventListener("submit", (e) => e.preventDefault());
   $("#cover-file").addEventListener("change", (e) => e.target.files[0] && uploadCover(e.target.files[0]));
+  $("#goals-dialog").addEventListener("close", () =>
+    $("#goals-dialog").returnValue === "ok" && saveGoals().catch((e) => toast(e.message, true)));
   $("#settings-dialog").addEventListener("close", () => $("#settings-dialog").returnValue === "ok" && saveSettings());
   $("#chat-form").addEventListener("submit", sendChat);
   $("#hist-full").addEventListener("change", renderHistDetail);

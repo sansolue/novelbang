@@ -44,6 +44,7 @@
       <span id="total-words"></span>
       <div class="bar"><div id="progress-fill"></div></div>
     </div>
+    <button class="ghost small today-btn" data-action="goals" id="today-btn" title="Today's writing, your streak and your goals"></button>
     <span class="save-state" id="save-state"></span>
     <div class="spacer"></div>
     <button class="ghost" data-action="comments" id="comments-btn" title="Your comments on the text. They're never in the book.">Comments<span class="badge" id="comments-count"></span></button>
@@ -394,6 +395,25 @@
       <button value="close">Close</button>
       <button type="button" class="primary" data-action="syn-apply" id="syn-apply" disabled>Apply</button>
     </menu>
+  </form>
+</dialog>
+
+<dialog id="goals-dialog" class="wide">
+  <form method="dialog">
+    <h3>Writing goals</h3>
+    <div class="goal-stats" id="goal-stats"></div>
+    <figure class="goal-chart">
+      <figcaption class="muted small-label">Words written each day, last 30 days</figcaption>
+      <div id="goal-chart"></div>
+    </figure>
+    <div class="row">
+      <label>Daily goal (words) <input id="goal-daily" type="number" min="0" step="50"></label>
+      <label>Book target (words) <input id="goal-target" type="number" min="0" step="1000"></label>
+      <label>Finish by <input id="goal-deadline" type="date"></label>
+    </div>
+    <p class="muted small-label">Only writing counts: words added in the editor, less any you cut. Importing, restoring
+      a version and Replace all don't. With a daily goal of 0, any writing keeps the streak going.</p>
+    <menu><button value="cancel" formnovalidate>Cancel</button><button class="primary" value="ok">Save</button></menu>
   </form>
 </dialog>
 

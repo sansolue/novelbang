@@ -28,6 +28,7 @@ import uuid
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field, fields
+from datetime import date
 from pathlib import Path
 from urllib.parse import unquote
 
@@ -165,6 +166,8 @@ class Metadata:
     identifier: str = field(default_factory=lambda: f"urn:uuid:{uuid.uuid4()}")
     number_chapters: bool = True
     target_words: int = 80000
+    daily_words: int = 500  # the daily writing goal (0 = none: any words keep the streak)
+    deadline: str = ""  # YYYY-MM-DD to finish target_words by, or empty
     trim_size: str = "6x9"  # printed page, in inches: the PDF and print HTML exports
     picture_size: int = 1600  # long side, in px, pictures are shrunk to when added (0 = keep)
 
@@ -183,6 +186,13 @@ class Metadata:
                 changes[f.name] = convert_field(getattr(self, f.name), data[f.name])
             except ValueError as e:
                 raise ProjectError(f"Invalid {f.name}: {e}") from None
+        if (d := changes.get("deadline", "").strip()):
+            try:
+                changes["deadline"] = date.fromisoformat(d).isoformat()
+            except ValueError:
+                raise ProjectError("Invalid deadline: use a date like 2027-03-31") from None
+        if changes.get("daily_words", 0) < 0 or changes.get("target_words", 0) < 0:
+            raise ProjectError("Word goals can't be negative")
         if changes.get("trim_size", self.trim_size) not in TRIM_SIZES:
             raise ProjectError(f"Invalid trim_size: choose one of {', '.join(TRIM_SIZES)}")
         for key, value in changes.items():
@@ -816,7 +826,7 @@ class Workspace:
                 top = Path(folder).resolve() == src.root.resolve()
                 left_out = {"exports", "trash", ".git"} if top else set()
                 if Path(folder).name == META_DIR:
-                    left_out.add("history.git")  # the copy's history starts now
+                    left_out |= {"history.git", "progress.json"}  # the copy's history starts now
                 return {n for n in names if n in left_out or n.endswith(".tmp")}
 
             shutil.copytree(src.root, dest, ignore=skip)

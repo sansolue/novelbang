@@ -6,15 +6,13 @@ by number; finished items move to [Done](#done).
 
 ## Recommended order
 
-1. **3. Daily goals.**
-2. **20. AI beta-reader**, which builds on comments.
-3. **26. Book design themes**, the biggest step toward replacing Vellum or Atticus.
+1. **20. AI beta-reader**, which builds on comments.
+2. **26. Book design themes**, the biggest step toward replacing Vellum or Atticus.
 
 ## Writing day to day
 
 | # | Feature | Size | Notes |
 |---|---------|------|-------|
-| 3 | Daily goals and session stats | M | Words written today, a daily target, a streak and an optional deadline. Version history already keeps snapshots, so the daily counts could come from those. |
 | 4 | Scenes inside chapters | L | Each scene gets its own point-of-view character, status and synopsis. Changes how chapters are stored. |
 | 12 | Show formatting in the editor | L | `*italic*` and `**bold**` show as raw asterisks. Real italics need an editor component in place of the plain text box. |
 | 16 | Read aloud | S | The computer's own voice reads from the cursor, for proofreading by ear. |
@@ -79,6 +77,7 @@ by number; finished items move to [Done](#done).
 |---|---------|---------|
 | 1 | Find and replace in a chapter or note | 0.2.0 |
 | 2 | Search and replace across the whole book | 0.2.0 |
+| 3 | Daily goals and session stats | next release |
 | 5 | Comments that stay out of the book | next release |
 | 6 | Rename, duplicate, archive and delete novels | 0.2.0 |
 | 7 | Import from Word, Markdown or plain text | 0.2.0 |
