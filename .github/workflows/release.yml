@@ -225,17 +225,22 @@ jobs:
           NOVELBANG_WORKSPACE: ${{ runner.temp }}/novels
           NOVELBANG_LOG_DIR: ${{ runner.temp }}/logs
           NOVELBANG_NO_OLLAMA: "1"
+          NOVELBANG_DEBUG: "1"  # logs each request, so the page's own calls show it loaded
           APPIMAGE_EXTRACT_AND_RUN: "1"  # no FUSE on CI machines
         run: |
           xvfb-run -a dist/NovelBang-*.AppImage &
-          for _ in $(seq 60); do
-            curl -sf -o /dev/null http://127.0.0.1:47865/static/app.js && up=1 && break
+          log="$NOVELBANG_LOG_DIR/novelbang.log"
+          # Not just the server: the window's WebKit has to load the page and run it.
+          for _ in $(seq 90); do
+            grep -q "GET /api/" "$log" 2>/dev/null && up=1 && break
             sleep 1
           done
+          sleep 5
+          pgrep -f usr/lib/novelbang/NovelBang > /dev/null || up=  # and it's still running
           pkill -f NovelBang || true
-          cat "$NOVELBANG_LOG_DIR/novelbang.log" || true
+          cat "$log" || true
           if [[ -z "${up:-}" ]]; then
-            echo "::error::The AppImage didn't start"
+            echo "::error::The AppImage didn't open its window, or closed"
             exit 1
           fi
 
