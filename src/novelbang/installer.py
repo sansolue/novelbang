@@ -72,7 +72,7 @@ def find_target(frozen: bool | None = None, executable: str | None = None, syste
         app = exe.parents[2]
         if app.suffix != ".app":
             return None, "This NovelBang isn't an app bundle."
-        if "/AppTranslocation/" in str(app):
+        if "AppTranslocation" in app.parts:
             return None, ("macOS is running NovelBang from a temporary copy. Drag it into Applications and "
                           "open it from there, and it can update itself.")
         if not os.access(app.parent, os.W_OK):

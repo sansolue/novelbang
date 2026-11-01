@@ -95,6 +95,7 @@ def test_windows_helper_runs_the_installer_after_exit(tmp_path):
     assert "'/ALLUSERS'" in base64.b64decode(elsewhere[-1]).decode("utf-16-le")
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="AppImages are Linux only; Windows has no execute bit")
 def test_appimage_is_replaced(tmp_path):
     image, new = tmp_path / "NovelBang.AppImage", tmp_path / ".NovelBang-update-x"
     image.write_text("old")
