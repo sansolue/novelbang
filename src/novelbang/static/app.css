@@ -313,6 +313,9 @@ dialog h3 { margin: 0 0 12px; font: 600 20px var(--serif); }
 dialog h4 { margin: 4px 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
 dialog menu { display: flex; justify-content: flex-end; gap: 8px; padding: 0; margin: 16px 0 0; }
 .presets { display: flex; gap: 4px; margin: -4px 0 10px; }
+.license-text { max-height: 22vh; overflow: auto; margin: 0; padding: 10px 12px; font-size: 11px; line-height: 1.45;
+  white-space: pre-wrap; background: var(--hover); border-radius: var(--radius); }
+.license-text.tall { max-height: 40vh; }
 .backup-status { align-items: center; }
 .backup-status .error { color: var(--danger); }
 dialog h4.section { margin: 18px 0 8px; padding-top: 12px; border-top: 1px solid var(--line); }

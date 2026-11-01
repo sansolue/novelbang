@@ -20,7 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from . import __version__, backup, comments, config, installer, progress, prompts
+from . import __version__, backup, comments, config, installer, notices, progress, prompts
 from .export import EXPORTERS
 from .export.render import BOOK_CSS, RenderedChapter, render_markdown
 from .history import HistoryTracker, ProjectHistory, git_available, word_diff
@@ -877,6 +877,10 @@ def create_app(
     @app.get("/api/about")
     def about():
         return {"version": __version__, "log": str(log_path())}
+
+    @app.get("/api/licenses")
+    def licenses():
+        return {"app": notices.app_license(), "third_party": notices.third_party()}
 
     @app.get("/api/update")
     async def update_status():

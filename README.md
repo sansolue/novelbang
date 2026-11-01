@@ -487,3 +487,14 @@ The server binds to `127.0.0.1` and rejects requests with a foreign `Host` heade
 To reach it from another machine, bind with `--host 0.0.0.0` and name the host clients
 will use with `--allow-host my-laptop.local`.
 It has no authentication — don't expose it to a network you don't trust.
+
+## License
+
+NovelBang is under the [MIT License](LICENSE), © 2026 SanSolue.
+
+The desktop apps also contain Python, the packages NovelBang runs on and the Crimson
+Text font, each under its own license. The build collects their license texts into
+`THIRD-PARTY-NOTICES.txt` inside the app (see `src/novelbang/notices.py`), and
+**Settings → Licenses** shows them. fpdf2, and on Linux PyGObject and pycairo, are under
+the LGPL, so the apps keep them as their unmodified Python source files, which anyone
+can replace with their own version.

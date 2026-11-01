@@ -352,6 +352,8 @@
       NovelBang <span id="about-version"></span> · Log (for reporting problems; it never contains your writing):
       <code id="about-log"></code>
       <button type="button" class="ghost small" id="reveal-log" data-action="reveal-log" hidden>Show in Finder</button>
+      <br>NovelBang is free software under the MIT License, made with open-source software.
+      <button type="button" class="ghost small" data-action="licenses">Licenses</button>
     </p>
     <menu><button value="cancel" formnovalidate>Cancel</button><button class="primary" value="ok">Save</button></menu>
   </form>
@@ -396,6 +398,17 @@
       <button value="close">Close</button>
       <button type="button" class="primary" data-action="syn-apply" id="syn-apply" disabled>Apply</button>
     </menu>
+  </form>
+</dialog>
+
+<dialog id="licenses-dialog" class="wide">
+  <form method="dialog">
+    <h3>Licenses</h3>
+    <h4>NovelBang</h4>
+    <pre id="license-app" class="license-text"></pre>
+    <h4 class="section">Software NovelBang is made with</h4>
+    <pre id="license-third" class="license-text tall"></pre>
+    <menu><button value="close">Close</button></menu>
   </form>
 </dialog>
 

@@ -8,6 +8,8 @@ from pathlib import Path
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 ROOT = Path(SPECPATH).parent
+sys.path.insert(0, str(ROOT / "src"))
+from novelbang import notices  # noqa: E402
 VERSION = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["version"]
 # macOS: a Developer ID ("Developer ID Application: Name (TEAMID)") signs the app with the
 # hardened runtime, ready for notarization; the app needs no entitlements (runtime exceptions).
@@ -28,12 +30,18 @@ if LINUX:
         "Soup", "WebKit2", "JavaScriptCore", "AyatanaAppIndicator3", "AppIndicator3",
     )]
 
+# Licenses: NovelBang's own, and those of everything it ships (Settings → About shows both).
+(ROOT / "build").mkdir(exist_ok=True)
+licenses = [(str(ROOT / "LICENSE"), "."), (str(notices.write(ROOT / "build")), ".")]
+
 a = Analysis(
     [str(ROOT / "packaging" / "novelbang_desktop.py")],
     pathex=[str(ROOT / "src")],
-    datas=collect_data_files("novelbang"),  # static/ (the UI)
+    datas=collect_data_files("novelbang") + licenses,  # static/ (the UI), fonts, licenses
     hiddenimports=hiddenimports,
     excludes=excludes,
+    # LGPL code stays as plain source files beside the app, so it can be swapped for another build.
+    module_collection_mode={module: "py" for module in notices.LGPL_MODULES.values()},
 )
 if LINUX:
     # Keep only what comes with Python and the app's own packages. A copy of a system library

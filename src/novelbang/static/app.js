@@ -1817,6 +1817,15 @@ async function saveSettings() {
   toast("Settings saved");
 }
 
+// ---------------------------------------------------------------- licenses
+
+async function openLicenses() {
+  const l = await api("GET", "/api/licenses");
+  $("#license-app").textContent = l.app;
+  $("#license-third").textContent = l.third_party;
+  $("#licenses-dialog").showModal();
+}
+
 // ---------------------------------------------------------------- goals
 
 function renderToday() {
@@ -2127,6 +2136,7 @@ function wire() {
     "delete-doc": deleteDoc,
     trash: () => openTrash().catch((e) => toast(e.message, true)),
     goals: () => openGoals().catch((e) => toast(e.message, true)),
+    licenses: () => openLicenses().catch((e) => toast(e.message, true)),
     "backup-choose": () => chooseBackupFolder().catch((e) => toast(e.message, true)),
     "backup-now": () => backupNow(),
     "doc-more": () => docMenu($('[data-action="doc-more"]')),
