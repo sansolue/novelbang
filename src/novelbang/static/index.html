@@ -97,6 +97,8 @@
         <button class="ghost small" data-action="new-note" title="New note">+ Note</button>
       </div>
       <ul id="note-list" class="note-list"></ul>
+      <button class="nav-item syn-link" data-action="trash" id="trash-btn" hidden
+        title="Chapters and notes you deleted, to put back">🗑 Deleted<span class="count" id="trash-count"></span></button>
       <p class="side-foot muted" id="project-path"></p>
       </div>
     </aside>
@@ -370,6 +372,15 @@
       <button value="close">Close</button>
       <button type="button" class="primary" data-action="syn-apply" id="syn-apply" disabled>Apply</button>
     </menu>
+  </form>
+</dialog>
+
+<dialog id="trash-dialog">
+  <form method="dialog">
+    <h3>Deleted chapters and notes</h3>
+    <p class="muted small-label">Deleted files wait in the project's trash/ folder. A chapter goes back where it was in the book.</p>
+    <ol id="trash-list" class="syn-list"></ol>
+    <menu><button value="close">Close</button></menu>
   </form>
 </dialog>
 

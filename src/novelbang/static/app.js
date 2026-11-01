@@ -372,6 +372,8 @@ function renderProject() {
   );
   $(".book-item").classList.toggle("active", isActive("book"));
   $("#merge-btn").hidden = !isActive("chapter") || p.chapters.at(-1)?.file === state.view.id;
+  $("#trash-btn").hidden = !p.trashed;
+  $("#trash-count").textContent = p.trashed || "";
   $("#comments-count").textContent = p.chapters.reduce((n, c) => n + (c.comments || 0), 0) || "";
   const needing = p.chapters.filter((c) => ["stale", "missing"].includes(c.synopsis_state)).length;
   $("#synopses-count").textContent = needing ? `${needing} to update` : "";
@@ -1281,7 +1283,7 @@ async function mergeChapter() {
   const i = chs.findIndex((c) => c.file === state.view.id);
   const next = chs[i + 1];
   if (!next) return;
-  if (!confirm(`Merge “${next.title}” onto the end of “${chs[i].title}”?\n\n“${next.title}” will be moved to the project's trash/ folder.`)) return;
+  if (!confirm(`Merge “${next.title}” onto the end of “${chs[i].title}”?\n\n“${next.title}” will be moved to Deleted, at the foot of the sidebar, where it can be restored.`)) return;
   await flushSave();
   state.project = await api("POST", `/api/projects/${pid()}/chapters/${enc(state.view.id)}/merge`);
   await openView("chapter", chs[i].file);  // same address, so go() wouldn't reload the text
@@ -1298,10 +1300,33 @@ async function newNote() {
 async function deleteDoc() {
   const { type, id } = state.view;
   const label = type === "chapter" ? state.project.chapters.find((c) => c.file === id)?.title : id;
-  if (!confirm(`Delete “${label}”?\n\nIt will be moved to the project's trash/ folder.`)) return;
+  if (!confirm(`Delete “${label}”?\n\nYou can restore it from Deleted, at the foot of the sidebar.`)) return;
   state.dirty = false;
   state.project = await api("DELETE", `/api/projects/${pid()}/${type === "chapter" ? "chapters" : "notes"}/${enc(id)}`);
   go("");
+}
+
+async function openTrash() {
+  await flushSave();
+  const { items } = await api("GET", `/api/projects/${pid()}/trash`);
+  $("#trash-list").replaceChildren(
+    ...items.map((t) =>
+      el("li", { class: "trash-item" },
+        el("span", { class: "name" }, (t.type === "chapter" ? "📄 " : "🗒 ") + t.title),
+        el("span", { class: "muted" }, `${fmt(t.words)} words · deleted ${when(t.deleted)}`),
+        el("button", { type: "button", class: "small", onclick: () => restoreTrashed(t).catch((e) => toast(e.message, true)) }, "Restore")))
+  );
+  if (!items.length) $("#trash-list").append(el("li", { class: "muted" }, "Nothing has been deleted."));
+  const dlg = $("#trash-dialog");
+  if (!dlg.open) dlg.showModal();
+}
+
+async function restoreTrashed(t) {
+  const res = await api("POST", `/api/projects/${pid()}/trash/restore`, { name: t.name });
+  state.project = res.project;
+  $("#trash-dialog").close();
+  toast(`Restored “${t.title}”`);
+  go(res.type, res.name);
 }
 
 function setupDragAndDrop() {
@@ -1870,6 +1895,7 @@ function wire() {
     "new-chapter": newChapter,
     "new-note": newNote,
     "delete-doc": deleteDoc,
+    trash: () => openTrash().catch((e) => toast(e.message, true)),
     "split-chapter": () => splitChapter().catch((e) => toast(e.message, true)),
     "merge-chapter": () => mergeChapter().catch((e) => toast(e.message, true)),
     synopses: () => openSynopses().catch((e) => toast(e.message, true)),

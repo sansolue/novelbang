@@ -326,6 +326,8 @@ dialog h4.section { margin: 18px 0 8px; padding-top: 12px; border-top: 1px solid
 .syn-toolbar #syn-progress { flex: 1; }
 .syn-list { list-style: none; margin: 0; padding: 0; max-height: 55vh; overflow-y: auto; border-top: 1px solid var(--line); }
 .syn-list li { padding: 10px 4px; border-bottom: 1px solid var(--line); }
+.trash-item { display: flex; align-items: center; gap: 12px; }
+.trash-item .name { flex: 1; }
 .syn-list li.working { background: color-mix(in srgb, var(--accent) 6%, transparent); }
 .syn-row { display: flex; align-items: center; gap: 8px; font-size: 13px; }
 .syn-row input { width: auto; }

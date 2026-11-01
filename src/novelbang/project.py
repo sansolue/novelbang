@@ -21,6 +21,7 @@ import os
 import re
 import shutil
 import threading
+import time
 import tomllib
 import unicodedata
 import uuid
@@ -63,12 +64,15 @@ DEFAULT_NOTES = {
 # Where NovelBang keeps its own bookkeeping inside a project (hidden from the author's git).
 META_DIR = ".novelbang"
 SYNOPSIS_STATE = "synopses.json"
+# What each file in trash/ was before it was deleted, so it can be put back as it was.
+TRASH_INDEX = "trash.json"
 # A synopsis is out of date once this share of the chapter's text is new or gone.
 STALE_RATIO = 0.25
 # Chapters shorter than this don't need a synopsis.
 SYNOPSIS_MIN_WORDS = 50
 
 _PARA_SPLIT = re.compile(r"\n\s*\n")
+_TRASH_COPY = re.compile(r"\.\d+(?=\.md$)")  # the ".2" _to_trash adds when a name is taken
 _SAFE_FILE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._ -]{0,120}\.md$")
 _WORD = re.compile(r"\b[\w'’-]+\b")
 # Inline Markdown images: ![alt](src "title"); group 1 is the src.
@@ -340,11 +344,14 @@ class Project:
     def _record_synopsis(self, file: str, text: str) -> None:
         data = self._synopsis_fingerprints()
         data[file] = fingerprint(text)
+        self._write_meta(SYNOPSIS_STATE, data)
+
+    def _write_meta(self, name: str, data: dict) -> None:
         meta = self.root / META_DIR
         meta.mkdir(exist_ok=True)
         if not (meta / ".gitignore").exists():
             (meta / ".gitignore").write_text("*\n", "utf-8", newline="\n")
-        _atomic_write(self._synopsis_path(), json.dumps(data, indent=1))
+        _atomic_write(meta / name, json.dumps(data, indent=1))
 
     def synopsis_state(self, chapter: Chapter, text: str, fingerprints: dict[str, dict] | None = None) -> str:
         """'none' (too short to need one), 'missing', 'stale' or 'fresh'."""
@@ -383,7 +390,10 @@ class Project:
 
     def delete_chapter(self, file: str) -> None:
         ch = self.chapter(file)
-        self._to_trash(self.chapters_dir / ch.file)
+        i = self.chapters.index(ch)
+        if trashed := self._to_trash(self.chapters_dir / ch.file):
+            self._remember_trashed(trashed, {"type": "chapter", **asdict(ch),
+                                             "after": self.chapters[i - 1].file if i else None})
         self.chapters.remove(ch)
         self.save()
 
@@ -458,7 +468,83 @@ class Project:
         _atomic_write(self.notes_dir / check_filename(name), text)
 
     def delete_note(self, name: str) -> None:
-        self._to_trash(self.notes_dir / check_filename(name))
+        if trashed := self._to_trash(self.notes_dir / check_filename(name)):
+            self._remember_trashed(trashed, {"type": "note", "file": name})
+
+    # ---- trash -------------------------------------------------------------
+
+    @property
+    def trash_dir(self) -> Path:
+        return self.root / "trash"
+
+    def _trash_index(self) -> dict[str, dict]:
+        try:
+            return json.loads((self.root / META_DIR / TRASH_INDEX).read_text("utf-8"))
+        except (OSError, ValueError):
+            return {}
+
+    def _remember_trashed(self, trashed: Path, entry: dict) -> None:
+        index = self._trash_index()
+        index[trashed.name] = {**entry, "deleted": time.time()}
+        # Forget files emptied out of trash/ by hand.
+        self._write_meta(TRASH_INDEX, {k: v for k, v in index.items() if (self.trash_dir / k).is_file()})
+
+    def _trashed(self, name: str, index: dict[str, dict]) -> dict:
+        """What a file in trash/ was. Files deleted before the index existed are told apart
+        by their name: chapter files start with a number (001-...), notes don't."""
+        if entry := index.get(name):
+            return entry
+        original = _TRASH_COPY.sub("", name)
+        if not re.match(r"\d+-", original):
+            return {"type": "note", "file": original}
+        title = Path(original).stem.lstrip("0123456789-_ ").replace("-", " ").strip()
+        return {"type": "chapter", "file": original, "title": title.title() or Path(original).stem}
+
+    def list_trash(self) -> list[dict]:
+        """Deleted chapters and notes, most recently deleted first."""
+        if not self.trash_dir.is_dir():
+            return []
+        index, out = self._trash_index(), []
+        for path in self.trash_dir.glob("*.md"):
+            if not _SAFE_FILE.match(path.name):
+                continue
+            entry = self._trashed(path.name, index)
+            out.append({
+                "name": path.name,
+                "type": entry["type"],
+                "title": entry.get("title") or entry["file"].removesuffix(".md"),
+                "deleted": entry.get("deleted", path.stat().st_mtime),
+                "words": count_words(path.read_text("utf-8")),
+            })
+        return sorted(out, key=lambda e: e["deleted"], reverse=True)
+
+    def restore_from_trash(self, name: str) -> tuple[str, str]:
+        """Put a deleted chapter or note back; returns its type and its file name now."""
+        path = self.trash_dir / check_filename(name)
+        if not path.is_file():
+            raise ProjectError(f"Nothing called {name!r} in the trash")
+        index = self._trash_index()
+        entry = self._trashed(name, index)
+        folder = self.chapters_dir if entry["type"] == "chapter" else self.notes_dir
+        folder.mkdir(exist_ok=True)
+        dest, n = folder / entry["file"], 2
+        while dest.exists():  # its old name was reused since; keep both
+            dest, n = folder / f"{Path(entry['file']).stem}-{n}.md", n + 1
+        path.rename(dest)
+        index.pop(name, None)
+        self._write_meta(TRASH_INDEX, index)
+        if entry["type"] == "note":
+            return "note", dest.name
+        ch = Chapter.from_dict({**entry, "file": dest.name})
+        files = [c.file for c in self.chapters]
+        # Back where it was: after the chapter that preceded it, or first if it was first.
+        if "after" not in entry or (entry["after"] is not None and entry["after"] not in files):
+            at = len(files)
+        else:
+            at = files.index(entry["after"]) + 1 if entry["after"] else 0
+        self.chapters.insert(at, ch)
+        self.save()
+        return "chapter", dest.name
 
     # ---- cover -------------------------------------------------------------
 
@@ -592,10 +678,10 @@ class Project:
 
     # ---- internal ----------------------------------------------------------
 
-    def _to_trash(self, path: Path) -> None:
+    def _to_trash(self, path: Path) -> Path | None:
         if not path.exists():
-            return
-        trash = self.root / "trash"
+            return None
+        trash = self.trash_dir
         trash.mkdir(exist_ok=True)
         dest = trash / path.name
         n = 2
@@ -603,6 +689,7 @@ class Project:
             dest = trash / f"{path.stem}.{n}{path.suffix}"
             n += 1
         shutil.move(path, dest)
+        return dest
 
 
 class Workspace:

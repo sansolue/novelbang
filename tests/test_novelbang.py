@@ -416,3 +416,51 @@ def test_split_and_merge_endpoints(tmp_path):
     r = c.post(f"/api/projects/{pid}/chapters/{file}/merge")
     assert [ch["file"] for ch in r.json()["chapters"]] == [file]
     assert c.get(f"/api/projects/{pid}/chapters/{file}/text").json()["text"] == "One 😀 part.\n\nTwo part.\n"
+
+
+def test_restore_deleted_chapter_to_its_place(project):
+    one = project.chapters[1]
+    project.delete_chapter(one.file)
+    project.delete_note("world.md")
+    items = sorted(project.list_trash(), key=lambda t: t["type"], reverse=True)
+    assert [(t["type"], t["title"]) for t in items] == [("note", "world"), ("chapter", "Chapter One")]
+    assert items[1]["words"] > 0
+    loaded = Project.load(project.root)
+    assert loaded.restore_from_trash(items[1]["name"]) == ("chapter", one.file)
+    assert [c.title for c in loaded.chapters] == ["Dedication", "Chapter One", "Chapter Two"]
+    assert loaded.chapters[1].synopsis == "Mara finds a letter."
+    assert loaded.read_chapter(one.file) == PROSE
+    assert loaded.restore_from_trash(items[0]["name"]) == ("note", "world.md")
+    assert "world.md" in loaded.list_notes() and loaded.list_trash() == []
+    with pytest.raises(ProjectError):
+        loaded.restore_from_trash(items[0]["name"])
+
+
+def test_restore_keeps_both_when_the_name_was_reused(project):
+    project.delete_note("world.md")
+    project.write_note("world.md", "# New world\n")
+    _, name = project.restore_from_trash("world.md")
+    assert name == "world-2.md" and project.read_note("world.md") == "# New world\n"
+
+
+def test_restore_files_deleted_before_the_index(project):
+    """Old projects have files in trash/ with no record of what they were."""
+    (project.root / "trash").mkdir()
+    (project.root / "trash" / "004-the-storm.2.md").write_text("Thunder.")
+    (project.root / "trash" / "timeline.md").write_text("# Timeline")
+    items = {t["name"]: t for t in project.list_trash()}
+    assert items["004-the-storm.2.md"]["type"] == "chapter" and items["004-the-storm.2.md"]["title"] == "The Storm"
+    assert items["timeline.md"]["type"] == "note"
+    assert project.restore_from_trash("004-the-storm.2.md") == ("chapter", "004-the-storm.md")
+    assert project.chapters[-1].title == "The Storm"
+
+
+def test_trash_endpoints(tmp_path):
+    c = TestClient(create_app(tmp_path / "ws", settings_path=tmp_path / "s.toml"), base_url="http://127.0.0.1")
+    pid = c.post("/api/projects", json={"title": "Trash Test"}).json()["id"]
+    file = c.get(f"/api/projects/{pid}").json()["chapters"][0]["file"]
+    assert c.delete(f"/api/projects/{pid}/chapters/{file}").json()["trashed"] == 1
+    [item] = c.get(f"/api/projects/{pid}/trash").json()["items"]
+    r = c.post(f"/api/projects/{pid}/trash/restore", json={"name": item["name"]}).json()
+    assert r["type"] == "chapter" and r["name"] == file and r["project"]["trashed"] == 0
+    assert c.post(f"/api/projects/{pid}/trash/restore", json={"name": "../novel.toml"}).status_code == 400

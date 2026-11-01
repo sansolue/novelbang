@@ -62,6 +62,10 @@ class Split(BaseModel):
     title: str = "Untitled chapter"
 
 
+class Trashed(BaseModel):
+    name: str  # its file name in trash/
+
+
 class TextBody(BaseModel):
     text: str
 
@@ -258,6 +262,7 @@ def create_app(
             "notes": p.list_notes(),
             "has_cover": p.cover_path() is not None,
             "history": git_available(),
+            "trashed": sum(1 for _ in p.trash_dir.glob("*.md")) if p.trash_dir.is_dir() else 0,
         }
 
     # ---- projects ----------------------------------------------------------
@@ -444,6 +449,19 @@ def create_app(
         with ws.edit(pid) as p:
             p.delete_note(name)
             return summary(p)
+
+    # ---- deleted chapters and notes ------------------------------------------
+
+    @app.get("/api/projects/{pid}/trash")
+    def list_trash(pid: str):
+        return {"items": ws.get(pid).list_trash()}
+
+    @app.post("/api/projects/{pid}/trash/restore")
+    def restore_trashed(pid: str, body: Trashed):
+        with ws.edit(pid) as p:
+            kind, name = p.restore_from_trash(body.name)
+            log.info("Restored the deleted %s %s/%s", kind, pid, name)
+            return {"type": kind, "name": name, "project": summary(p)}
 
     # ---- search --------------------------------------------------------------
     # The search text is the writing's, so it's never logged (see logs.py).

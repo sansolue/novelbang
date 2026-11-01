@@ -6,8 +6,7 @@ by number; finished items move to [Done](#done).
 
 ## Recommended order
 
-1. **Quick fixes and safety:** 14 (restore deleted chapters and notes), 15 (rename notes)
-   and 29 (automatic backups).
+1. **Quick fixes and safety:** 15 (rename notes) and 29 (automatic backups).
 2. **3. Daily goals.**
 3. **20. AI beta-reader**, which builds on comments.
 4. **26. Book design themes**, the biggest step toward replacing Vellum or Atticus.
@@ -19,7 +18,6 @@ by number; finished items move to [Done](#done).
 | 3 | Daily goals and session stats | M | Words written today, a daily target, a streak and an optional deadline. Version history already keeps snapshots, so the daily counts could come from those. |
 | 4 | Scenes inside chapters | L | Each scene gets its own point-of-view character, status and synopsis. Changes how chapters are stored. |
 | 12 | Show formatting in the editor | L | `*italic*` and `**bold**` show as raw asterisks. Real italics need an editor component in place of the plain text box. |
-| 14 | Restore deleted chapters and notes | S | They're moved to the project's `trash/` folder, but nothing in the app brings them back. |
 | 15 | Rename notes | S | Only chapters can be renamed today. |
 | 16 | Read aloud | S | The computer's own voice reads from the cursor, for proofreading by ear. |
 | 17 | Note beside the chapter | M | Keep the outline or a character sheet open next to the text while writing. |
@@ -92,3 +90,4 @@ by number; finished items move to [Done](#done).
 | 10 | Update check | 0.2.0 |
 | 11 | Light and dark appearance | 0.2.0 |
 | 13 | Split and merge chapters | next release |
+| 14 | Restore deleted chapters and notes | next release |
